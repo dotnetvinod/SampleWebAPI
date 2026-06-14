@@ -9,9 +9,80 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+function New-SqlAzureConnectionString {
+    param(
+        [string]$Server,
+        [string]$Database,
+        [string]$Username,
+        [string]$Password
+    )
+
+    Add-Type -AssemblyName 'System.Data' | Out-Null
+    $builder = New-Object System.Data.SqlClient.SqlConnectionStringBuilder
+    $builder['Data Source'] = if ($Server -match ',') { $Server } else { "tcp:$Server,1433" }
+    $builder['Initial Catalog'] = $Database
+    $builder['User ID'] = $Username
+    $builder['Password'] = $Password
+    $builder['Encrypt'] = $true
+    $builder['Trust Server Certificate'] = $false
+    $builder['Connection Timeout'] = 30
+    return $builder.ConnectionString
+}
+
+function Set-WebAppConnectionString {
+    param(
+        [string]$ResourceGroup,
+        [string]$WebAppName,
+        [string]$ConnectionString
+    )
+
+    $settingsFile = Join-Path ([System.IO.Path]::GetTempPath()) "connstrings-$(Get-Random).json"
+    @(
+        @{
+            name = 'DefaultConnection'
+            value = $ConnectionString
+            type = 'SQLAzure'
+            slotSetting = $false
+        }
+    ) | ConvertTo-Json -Depth 3 | Set-Content -Path $settingsFile -Encoding utf8
+
+    az webapp config connection-string set `
+        --resource-group $ResourceGroup `
+        --name $WebAppName `
+        --settings "@$settingsFile"
+
+    Remove-Item $settingsFile -Force -ErrorAction SilentlyContinue
+}
+
 function Test-InvalidPipelineValue {
     param([string]$Value)
     return [string]::IsNullOrWhiteSpace($Value) -or $Value -match '^\$\([^)]+\)$'
+}
+
+function Resolve-ConnectionString {
+    param(
+        [string]$ExplicitConnectionString,
+        [string]$SqlServer,
+        [string]$SqlDatabase,
+        [string]$SqlUsername,
+        [string]$SqlPassword
+    )
+
+    if (-not (Test-InvalidPipelineValue $SqlServer) `
+        -and -not (Test-InvalidPipelineValue $SqlDatabase) `
+        -and -not (Test-InvalidPipelineValue $SqlUsername) `
+        -and -not (Test-InvalidPipelineValue $SqlPassword)) {
+        Write-Host 'Building connection string from sqlServer/sqlDatabase/sqlUsername/sqlPassword.'
+        Write-Host "SQL login for API: $SqlUsername"
+        return (New-SqlAzureConnectionString -Server $SqlServer -Database $SqlDatabase -Username $SqlUsername -Password $SqlPassword)
+    }
+
+    if (-not (Test-InvalidPipelineValue $ExplicitConnectionString)) {
+        Write-Warning 'Using apiConnectionString from variable group. Prefer sqlServer + sqlUsername + sqlPassword so API and DB deploy use the same login.'
+        return $ExplicitConnectionString
+    }
+
+    throw 'Set sqlServer, sqlDatabase, sqlUsername, and sqlPassword in the variable group (same values used for database deploy).'
 }
 
 function Resolve-WebAppName {
@@ -83,6 +154,18 @@ if (Test-InvalidPipelineValue $AspNetCoreEnvironment) { $AspNetCoreEnvironment =
 if (Test-InvalidPipelineValue $ConnectionString) { $ConnectionString = $env:DEPLOY_CONNECTION_STRING }
 if (Test-InvalidPipelineValue $PackagePath) { $PackagePath = $env:DEPLOY_PACKAGE_PATH }
 
+$sqlServer = $env:DEPLOY_SQL_SERVER
+$sqlDatabase = $env:DEPLOY_SQL_DATABASE
+$sqlUsername = $env:DEPLOY_SQL_USERNAME
+$sqlPassword = $env:DEPLOY_SQL_PASSWORD
+
+$ConnectionString = Resolve-ConnectionString `
+    -ExplicitConnectionString $ConnectionString `
+    -SqlServer $sqlServer `
+    -SqlDatabase $sqlDatabase `
+    -SqlUsername $sqlUsername `
+    -SqlPassword $sqlPassword
+
 if (Test-InvalidPipelineValue $WebAppName) {
     throw 'azureWebAppName is required in the variable group (Portal -> App Service -> Overview -> Name).'
 }
@@ -140,18 +223,14 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 if (-not (Test-InvalidPipelineValue $ConnectionString)) {
-    az webapp config connection-string set `
-        --resource-group $ResourceGroup `
-        --name $WebAppName `
-        --connection-string-type SQLAzure `
-        --settings "DefaultConnection=$ConnectionString"
+    Set-WebAppConnectionString -ResourceGroup $ResourceGroup -WebAppName $WebAppName -ConnectionString $ConnectionString
 
     if ($LASTEXITCODE -ne 0) {
         throw 'Failed to set connection string on App Service.'
     }
 }
 else {
-    Write-Warning 'apiConnectionString is empty — app will start but database calls will fail.'
+    Write-Warning 'Connection string is empty — app will start but database calls will fail.'
 }
 
 $zipPath = Join-Path ([System.IO.Path]::GetTempPath()) "api-deploy-$(Get-Random).zip"

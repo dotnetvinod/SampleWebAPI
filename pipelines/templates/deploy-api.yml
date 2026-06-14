@@ -74,6 +74,10 @@ steps:
       DEPLOY_WEBAPP_RESOURCE_GROUP: $(azureResourceGroup)
       DEPLOY_ASPNETCORE_ENVIRONMENT: ${{ parameters.aspnetcoreEnvironment }}
       DEPLOY_CONNECTION_STRING: $(apiConnectionString)
+      DEPLOY_SQL_SERVER: $(sqlServer)
+      DEPLOY_SQL_DATABASE: $(sqlDatabase)
+      DEPLOY_SQL_USERNAME: $(sqlUsername)
+      DEPLOY_SQL_PASSWORD: $(sqlPassword)
       DEPLOY_PACKAGE_PATH: $(packagePath)
     inputs:
       azureSubscription: ${{ parameters.azureServiceConnection }}
