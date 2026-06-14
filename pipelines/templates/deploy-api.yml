@@ -18,12 +18,10 @@ steps:
   - ${{ if eq(parameters.pipelineResource, '') }}:
     - download: current
       artifact: ${{ parameters.artifactName }}
-      condition: succeeded()
 
   - ${{ if ne(parameters.pipelineResource, '') }}:
     - download: ${{ parameters.pipelineResource }}
       artifact: ${{ parameters.artifactName }}
-      condition: succeeded()
 
   - task: PowerShell@2
     displayName: Set package path

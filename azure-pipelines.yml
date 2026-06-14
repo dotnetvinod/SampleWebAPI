@@ -22,12 +22,6 @@ parameters:
     type: boolean
     default: true
 
-# Cancel all downstream stages immediately when any stage fails (no waiting).
-cancelStagesOnFailure: true
-
-pool:
-  vmImage: ubuntu-latest
-
 variables:
   dotnetVersion: '8.0.x'
   buildConfiguration: Release
@@ -37,7 +31,9 @@ variables:
 
 stages:
   - stage: Build
-    displayName: Build & Test
+    displayName: Build and Test
+    pool:
+      vmImage: ubuntu-latest
     jobs:
       - job: BuildAndTest
         displayName: Restore, build, test, publish
@@ -110,7 +106,7 @@ stages:
               publishLocation: pipeline
 
   - stage: DeployDev
-    displayName: Deploy — Dev
+    displayName: Deploy Dev
     dependsOn: Build
     condition: |
       and(
@@ -123,6 +119,8 @@ stages:
       )
     variables:
       - group: StudentManagement-Dev
+    pool:
+      vmImage: ubuntu-latest
     jobs:
       - deployment: DeployDev
         displayName: Deploy database and API to Dev
@@ -132,7 +130,6 @@ stages:
             deploy:
               steps:
                 - checkout: self
-                  condition: succeeded()
 
                 - template: pipelines/templates/deploy-database.yml
                   parameters:
@@ -152,14 +149,14 @@ stages:
                     artifactName: api
 
   - stage: DeployQA
-    displayName: Deploy — QA
+    displayName: Deploy QA
     dependsOn:
       - Build
       - DeployDev
     condition: |
       and(
         succeeded('Build'),
-        in(dependencies.DeployDev.result, 'Succeeded', 'Skipped'),
+        or(succeeded('DeployDev'), eq(dependencies.DeployDev.result, 'Skipped')),
         ne(variables['Build.Reason'], 'PullRequest'),
         or(
           and(eq(variables['Build.SourceBranch'], 'refs/heads/dev'), in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI')),
@@ -168,6 +165,8 @@ stages:
       )
     variables:
       - group: StudentManagement-QA
+    pool:
+      vmImage: ubuntu-latest
     jobs:
       - deployment: DeployQA
         displayName: Deploy database and API to QA
@@ -177,7 +176,6 @@ stages:
             deploy:
               steps:
                 - checkout: self
-                  condition: succeeded()
 
                 - template: pipelines/templates/deploy-database.yml
                   parameters:

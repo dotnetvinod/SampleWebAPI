@@ -47,9 +47,9 @@ Pipelines are configured to **stop immediately** when a step or stage fails:
 
 | Setting | Effect |
 |---------|--------|
-| `cancelStagesOnFailure: true` | Cancels all downstream stages when any stage fails |
 | `condition: succeeded()` on steps | Skips remaining steps in the same job after a failure |
-| Dev → QA order | QA deploy runs only after Dev succeeds (or Dev is skipped) |
+| Dev then QA stage order | QA deploy runs only after Dev succeeds (or Dev is skipped) |
+| `dependsOn` + `succeeded('Build')` | Downstream stages do not run if an upstream stage fails |
 
 **Exception:** SQL firewall cleanup still runs after a failed DB deploy so temporary firewall rules are removed.
 

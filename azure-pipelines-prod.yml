@@ -9,12 +9,6 @@ trigger:
 
 pr: none
 
-# Cancel all downstream stages immediately when any stage fails (no waiting).
-cancelStagesOnFailure: true
-
-pool:
-  vmImage: ubuntu-latest
-
 variables:
   dotnetVersion: '8.0.x'
   buildConfiguration: Release
@@ -24,7 +18,9 @@ variables:
 
 stages:
   - stage: Build
-    displayName: Build & Test
+    displayName: Build and Test
+    pool:
+      vmImage: ubuntu-latest
     jobs:
       - job: BuildAndTest
         displayName: Restore, build, test, publish
@@ -87,11 +83,13 @@ stages:
               publishLocation: pipeline
 
   - stage: DeployProd
-    displayName: Deploy — Production
+    displayName: Deploy Production
     dependsOn: Build
     condition: succeeded('Build')
     variables:
       - group: StudentManagement-Prod
+    pool:
+      vmImage: ubuntu-latest
     jobs:
       - deployment: DeployProd
         displayName: Deploy database and API to Production
@@ -101,7 +99,6 @@ stages:
             deploy:
               steps:
                 - checkout: self
-                  condition: succeeded()
 
                 - template: pipelines/templates/deploy-database.yml
                   parameters:
