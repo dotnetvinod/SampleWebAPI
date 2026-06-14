@@ -191,7 +191,22 @@ Client with IP address 'x.x.x.x' is not allowed to access the server
 2. Enable **Allow Azure services and resources to access this server**
 3. Optionally add your own IP for SSMS access
 
-The service connection (`StudentManagement-Azure`) needs permission to manage firewall rules (e.g. **Contributor** on the resource group or SQL Server).
+The service connection (`StudentManagement-Azure`) needs permission to manage firewall rules (e.g. **Contributor** or **SQL Server Contributor** on the SQL server or resource group).
+
+Grant access with Azure CLI (replace values):
+
+```bash
+az role assignment create \
+  --assignee "YOUR-SERVICE-PRINCIPAL-OBJECT-ID" \
+  --role "SQL Server Contributor" \
+  --scope "/subscriptions/YOUR-SUBSCRIPTION-ID/resourceGroups/YOUR-RG/providers/Microsoft.Sql/servers/cruddev"
+```
+
+Find the service principal object id in **Project Settings → Service connections → StudentManagement-Azure → Manage Service Principal**.
+
+Also verify `sqlResourceGroup` in your variable group is the **actual resource group name** (not empty, not a macro).
+
+**Portal alternative (no pipeline firewall automation):** Azure Portal → SQL Server `cruddev` → **Networking** → enable **Allow Azure services and resources to access this server** → Save. Then remove the firewall steps by leaving `sqlResourceGroup` empty in the variable group (firewall tasks are skipped when empty).
 
 ---
 

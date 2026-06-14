@@ -1,40 +1,33 @@
 parameters:
-  - name: sqlServer
-    type: string
-  - name: sqlDatabase
-    type: string
-  - name: sqlUsername
-    type: string
-  - name: sqlPassword
-    type: string
   - name: azureServiceConnection
     type: string
-    default: ''
-  - name: sqlResourceGroup
-    type: string
-    default: ''
+    default: 'StudentManagement-Azure'
 
 steps:
   - task: AzureCLI@2
     displayName: Allow agent IP on SQL Server firewall
-    condition: and(succeeded(), ne('${{ parameters.azureServiceConnection }}', ''), ne('${{ parameters.sqlResourceGroup }}', ''))
+    condition: and(succeeded(), ne(variables['sqlResourceGroup'], ''))
     inputs:
       azureSubscription: ${{ parameters.azureServiceConnection }}
       scriptType: pscore
       scriptLocation: inlineScript
       inlineScript: |
+        $ErrorActionPreference = 'Stop'
         $agentIp = (Invoke-RestMethod -Uri 'https://api.ipify.org?format=text').Trim()
-        $serverName = '${{ parameters.sqlServer }}'.Split('.')[0]
+        $serverName = '$(sqlServer)'.Split('.')[0]
+        $resourceGroup = '$(sqlResourceGroup)'
         $ruleName = "ado-build-$(Build.BuildId)"
         Write-Host "Agent IP: $agentIp"
+        Write-Host "Resource group: $resourceGroup"
         Write-Host "SQL server: $serverName"
         Write-Host "Firewall rule: $ruleName"
         az sql server firewall-rule create `
-          --resource-group '${{ parameters.sqlResourceGroup }}' `
+          --resource-group $resourceGroup `
           --server $serverName `
           --name $ruleName `
           --start-ip-address $agentIp `
           --end-ip-address $agentIp
+        if ($LASTEXITCODE -ne 0) { throw "Failed to create SQL firewall rule." }
         Write-Host "##vso[task.setvariable variable=sqlFirewallRuleName]$ruleName"
         Write-Host "##vso[task.setvariable variable=sqlServerShortName]$serverName"
         Write-Host "Waiting 10 seconds for firewall rule to propagate..."
@@ -57,26 +50,30 @@ steps:
   - task: PowerShell@2
     displayName: Deploy database scripts
     condition: succeeded()
+    env:
+      SQL_PASSWORD: $(sqlPassword)
     inputs:
-      filePath: $(Build.SourcesDirectory)/StudentManagement.Database/deploy/Deploy-Database.ps1
-      arguments: >-
-        -Server "${{ parameters.sqlServer }}"
-        -Database "${{ parameters.sqlDatabase }}"
-        -Username "${{ parameters.sqlUsername }}"
-        -Password "${{ parameters.sqlPassword }}"
+      targetType: inline
       pwsh: true
+      script: |
+        $ErrorActionPreference = 'Stop'
+        & "$(Build.SourcesDirectory)/StudentManagement.Database/deploy/Deploy-Database.ps1" `
+          -Server "$(sqlServer)" `
+          -Database "$(sqlDatabase)" `
+          -Username "$(sqlUsername)" `
+          -Password $env:SQL_PASSWORD
 
   - task: AzureCLI@2
     displayName: Remove agent IP from SQL Server firewall
-    # Cleanup only — runs after failure so the SQL firewall rule is not left open.
-    condition: and(always(), ne('${{ parameters.azureServiceConnection }}', ''), ne('${{ parameters.sqlResourceGroup }}', ''), ne(variables['sqlFirewallRuleName'], ''))
+    condition: and(always(), ne(variables['sqlResourceGroup'], ''), ne(variables['sqlFirewallRuleName'], ''))
     inputs:
       azureSubscription: ${{ parameters.azureServiceConnection }}
       scriptType: pscore
       scriptLocation: inlineScript
       inlineScript: |
+        $ErrorActionPreference = 'Stop'
         az sql server firewall-rule delete `
-          --resource-group '${{ parameters.sqlResourceGroup }}' `
-          --server '$(sqlServerShortName)' `
-          --name '$(sqlFirewallRuleName)'
+          --resource-group "$(sqlResourceGroup)" `
+          --server "$(sqlServerShortName)" `
+          --name "$(sqlFirewallRuleName)"
         Write-Host "Removed firewall rule $(sqlFirewallRuleName)"

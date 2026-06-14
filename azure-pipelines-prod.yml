@@ -102,12 +102,7 @@ stages:
 
                 - template: pipelines/templates/deploy-database.yml
                   parameters:
-                    sqlServer: $(sqlServer)
-                    sqlDatabase: $(sqlDatabase)
-                    sqlUsername: $(sqlUsername)
-                    sqlPassword: $(sqlPassword)
                     azureServiceConnection: $(azureServiceConnection)
-                    sqlResourceGroup: $(sqlResourceGroup)
 
                 - template: pipelines/templates/deploy-api.yml
                   parameters:
