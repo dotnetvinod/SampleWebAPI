@@ -1,11 +1,7 @@
 parameters:
   - name: azureServiceConnection
     type: string
-  - name: azureWebAppName
-    type: string
   - name: aspnetcoreEnvironment
-    type: string
-  - name: apiConnectionString
     type: string
   - name: pipelineResource
     type: string
@@ -16,37 +12,75 @@ parameters:
 
 steps:
   - ${{ if eq(parameters.pipelineResource, '') }}:
-    - download: current
-      artifact: ${{ parameters.artifactName }}
+    - task: DownloadPipelineArtifact@2
+      displayName: Download API artifact (Build stage)
+      inputs:
+        buildType: current
+        artifactName: ${{ parameters.artifactName }}
+        targetPath: $(Pipeline.Workspace)/${{ parameters.artifactName }}
 
   - ${{ if ne(parameters.pipelineResource, '') }}:
     - download: ${{ parameters.pipelineResource }}
       artifact: ${{ parameters.artifactName }}
 
-  - task: AzureAppServiceSettings@1
-    displayName: Configure App Service settings
+  - task: PowerShell@2
+    displayName: Resolve API package path
+    condition: succeeded()
     inputs:
-      azureSubscription: ${{ parameters.azureServiceConnection }}
-      appName: ${{ parameters.azureWebAppName }}
-      resourceGroupName: ''
-      appSettings: |
-        [
-          {
-            "name": "ASPNETCORE_ENVIRONMENT",
-            "value": "${{ parameters.aspnetcoreEnvironment }}",
-            "slotSetting": false
-          },
-          {
-            "name": "ConnectionStrings__DefaultConnection",
-            "value": "${{ parameters.apiConnectionString }}",
-            "slotSetting": false
-          }
-        ]
+      targetType: inline
+      pwsh: true
+      script: |
+        $ErrorActionPreference = 'Stop'
+        $workspace = '$(Pipeline.Workspace)'
+        $artifact = '${{ parameters.artifactName }}'
+        $resource = '${{ parameters.pipelineResource }}'
 
-  - task: AzureWebApp@1
-    displayName: Deploy API to Azure Web App
+        $preferred = if ([string]::IsNullOrWhiteSpace($resource)) {
+          Join-Path $workspace $artifact
+        } else {
+          Join-Path (Join-Path $workspace $resource) $artifact
+        }
+
+        Write-Host "Preferred package path: $preferred"
+        Write-Host "Workspace contents:"
+        Get-ChildItem $workspace -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  $($_.Name)" }
+
+        $dllPath = Join-Path $preferred 'StudentManagementApi.dll'
+        if (Test-Path $dllPath) {
+          $path = $preferred
+        }
+        else {
+          Write-Host "DLL not at preferred path; searching workspace..."
+          $dll = Get-ChildItem -Path $workspace -Filter 'StudentManagementApi.dll' -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -notmatch '[\\/](ref|tests?)[\\/]' } |
+            Select-Object -First 1
+
+          if (-not $dll) {
+            throw "StudentManagementApi.dll was not found under $workspace. The Build stage may not have published the '$artifact' artifact."
+          }
+
+          $path = $dll.DirectoryName
+        }
+
+        Write-Host "Resolved package path: $path"
+        Get-ChildItem $path | Select-Object -First 10 | ForEach-Object { Write-Host "  $($_.Name)" }
+        Write-Host "##vso[task.setvariable variable=packagePath]$path"
+
+  - task: AzureCLI@2
+    displayName: Configure and deploy Web App
+    condition: succeeded()
+    env:
+      DEPLOY_WEBAPP_NAME: $(azureWebAppName)
+      DEPLOY_WEBAPP_RESOURCE_GROUP: $(azureResourceGroup)
+      DEPLOY_ASPNETCORE_ENVIRONMENT: ${{ parameters.aspnetcoreEnvironment }}
+      DEPLOY_CONNECTION_STRING: $(apiConnectionString)
+      DEPLOY_SQL_SERVER: $(sqlServer)
+      DEPLOY_SQL_DATABASE: $(sqlDatabase)
+      DEPLOY_SQL_USERNAME: $(sqlUsername)
+      DEPLOY_SQL_PASSWORD: $(sqlPassword)
+      DEPLOY_PACKAGE_PATH: $(packagePath)
     inputs:
       azureSubscription: ${{ parameters.azureServiceConnection }}
-      appType: webApp
-      appName: ${{ parameters.azureWebAppName }}
-      package: $(Pipeline.Workspace)${{ if ne(parameters.pipelineResource, '') }}/${{ parameters.pipelineResource }}${{ endif }}/${{ parameters.artifactName }}
+      scriptType: pscore
+      scriptLocation: scriptPath
+      scriptPath: $(Build.SourcesDirectory)/StudentManagement.Database/deploy/Deploy-WebApp.ps1

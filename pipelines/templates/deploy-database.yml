@@ -1,17 +1,26 @@
 parameters:
-  - name: sqlServer
+  - name: azureServiceConnection
     type: string
-  - name: sqlDatabase
-    type: string
-  - name: sqlUsername
-    type: string
-  - name: sqlPassword
-    type: string
+    default: 'StudentManagement-Azure'
 
 steps:
+  - task: AzureCLI@2
+    displayName: Open SQL firewall for pipeline agent (optional)
+    condition: and(succeeded(), eq(variables['enableAutomatedSqlFirewall'], 'true'))
+    env:
+      DEPLOY_SQL_SERVER: $(sqlServer)
+      DEPLOY_SQL_RESOURCE_GROUP: $(sqlResourceGroup)
+      DEPLOY_BUILD_ID: $(Build.BuildId)
+      DEPLOY_SERVICE_CONNECTION: ${{ parameters.azureServiceConnection }}
+    inputs:
+      azureSubscription: ${{ parameters.azureServiceConnection }}
+      scriptType: pscore
+      scriptLocation: scriptPath
+      scriptPath: $(Build.SourcesDirectory)/StudentManagement.Database/deploy/Open-SqlFirewallForAgent.ps1
+
   - task: PowerShell@2
     displayName: Install sqlcmd (Linux)
-    condition: eq(variables['Agent.OS'], 'Linux')
+    condition: and(succeeded(), eq(variables['Agent.OS'], 'Linux'))
     inputs:
       targetType: inline
       script: |
@@ -25,11 +34,41 @@ steps:
 
   - task: PowerShell@2
     displayName: Deploy database scripts
+    condition: succeeded()
+    env:
+      DEPLOY_SQL_SERVER: $(sqlServer)
+      DEPLOY_SQL_DATABASE: $(sqlDatabase)
+      DEPLOY_SQL_USERNAME: $(sqlUsername)
+      SQL_PASSWORD: $(sqlPassword)
     inputs:
-      filePath: $(Build.SourcesDirectory)/StudentManagement.Database/deploy/Deploy-Database.ps1
-      arguments: >-
-        -Server "${{ parameters.sqlServer }}"
-        -Database "${{ parameters.sqlDatabase }}"
-        -Username "${{ parameters.sqlUsername }}"
-        -Password "${{ parameters.sqlPassword }}"
+      targetType: inline
       pwsh: true
+      script: |
+        $ErrorActionPreference = 'Stop'
+        $sqlServer = $env:DEPLOY_SQL_SERVER
+        if ($sqlServer -match 'database\.windows\.net') {
+          Write-Host 'Azure SQL: ensure SQL Server firewall allows pipeline agent IPs (see docs/CICD.md).'
+        }
+        $scriptParams = @{
+          Server   = $sqlServer
+          Database = $env:DEPLOY_SQL_DATABASE
+          Username = $env:DEPLOY_SQL_USERNAME
+          Password = $env:SQL_PASSWORD
+        }
+        if ($sqlServer -match 'database\.windows\.net') {
+          $scriptParams.TrustServerCertificate = $true
+        }
+        & '$(Build.SourcesDirectory)/StudentManagement.Database/deploy/Deploy-Database.ps1' @scriptParams
+
+  - task: AzureCLI@2
+    displayName: Close SQL firewall for pipeline agent (optional)
+    condition: and(always(), eq(variables['enableAutomatedSqlFirewall'], 'true'), eq(variables['sqlFirewallManaged'], 'true'), ne(variables['sqlFirewallRuleName'], ''))
+    env:
+      DEPLOY_SQL_RESOURCE_GROUP: $(sqlResourceGroupResolved)
+      DEPLOY_SQL_SERVER_SHORT_NAME: $(sqlServerShortName)
+      DEPLOY_SQL_FIREWALL_RULE_NAME: $(sqlFirewallRuleName)
+    inputs:
+      azureSubscription: ${{ parameters.azureServiceConnection }}
+      scriptType: pscore
+      scriptLocation: scriptPath
+      scriptPath: $(Build.SourcesDirectory)/StudentManagement.Database/deploy/Close-SqlFirewallForAgent.ps1

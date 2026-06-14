@@ -9,33 +9,37 @@ trigger:
 
 pr: none
 
-pool:
-  vmImage: ubuntu-latest
-
 variables:
   dotnetVersion: '8.0.x'
   buildConfiguration: Release
   apiProject: StudentManagementApi/StudentManagementApi.csproj
   testProject: StudentManagementApi.Tests/StudentManagementApi.Tests.csproj
   azureServiceConnection: StudentManagement-Azure
+  enableAutomatedSqlFirewall: 'false'
 
 stages:
   - stage: Build
-    displayName: Build & Test
+    displayName: Build and Test
+    pool:
+      vmImage: ubuntu-latest
     jobs:
       - job: BuildAndTest
         displayName: Restore, build, test, publish
+        cancelTimeoutInMinutes: 1
         steps:
           - checkout: self
+            displayName: Checkout source
 
           - task: UseDotNet@2
             displayName: Install .NET SDK
+            condition: succeeded()
             inputs:
               packageType: sdk
               version: $(dotnetVersion)
 
           - task: DotNetCoreCLI@2
             displayName: Restore
+            condition: succeeded()
             inputs:
               command: restore
               projects: |
@@ -44,6 +48,7 @@ stages:
 
           - task: DotNetCoreCLI@2
             displayName: Build
+            condition: succeeded()
             inputs:
               command: build
               projects: |
@@ -53,6 +58,7 @@ stages:
 
           - task: DotNetCoreCLI@2
             displayName: Test
+            condition: succeeded()
             inputs:
               command: test
               projects: $(testProject)
@@ -61,6 +67,7 @@ stages:
 
           - task: DotNetCoreCLI@2
             displayName: Publish API
+            condition: succeeded()
             inputs:
               command: publish
               publishWebProjects: false
@@ -70,17 +77,20 @@ stages:
 
           - task: PublishPipelineArtifact@1
             displayName: Publish API artifact
+            condition: succeeded()
             inputs:
               targetPath: $(Build.ArtifactStagingDirectory)/api
               artifact: api
               publishLocation: pipeline
 
   - stage: DeployProd
-    displayName: Deploy — Production
+    displayName: Deploy Production
     dependsOn: Build
-    condition: succeeded()
+    condition: succeeded('Build')
     variables:
       - group: StudentManagement-Prod
+    pool:
+      vmImage: ubuntu-latest
     jobs:
       - deployment: DeployProd
         displayName: Deploy database and API to Production
@@ -93,15 +103,10 @@ stages:
 
                 - template: pipelines/templates/deploy-database.yml
                   parameters:
-                    sqlServer: $(sqlServer)
-                    sqlDatabase: $(sqlDatabase)
-                    sqlUsername: $(sqlUsername)
-                    sqlPassword: $(sqlPassword)
+                    azureServiceConnection: $(azureServiceConnection)
 
                 - template: pipelines/templates/deploy-api.yml
                   parameters:
                     azureServiceConnection: $(azureServiceConnection)
-                    azureWebAppName: $(azureWebAppName)
                     aspnetcoreEnvironment: Production
-                    apiConnectionString: $(apiConnectionString)
                     artifactName: api
