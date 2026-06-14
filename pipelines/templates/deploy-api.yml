@@ -12,28 +12,58 @@ parameters:
 
 steps:
   - ${{ if eq(parameters.pipelineResource, '') }}:
-    - download: current
-      artifact: ${{ parameters.artifactName }}
+    - task: DownloadPipelineArtifact@2
+      displayName: Download API artifact (Build stage)
+      inputs:
+        buildType: current
+        artifactName: ${{ parameters.artifactName }}
+        targetPath: $(Pipeline.Workspace)/${{ parameters.artifactName }}
 
   - ${{ if ne(parameters.pipelineResource, '') }}:
     - download: ${{ parameters.pipelineResource }}
       artifact: ${{ parameters.artifactName }}
 
   - task: PowerShell@2
-    displayName: Set package path
+    displayName: Resolve API package path
     condition: succeeded()
     inputs:
       targetType: inline
       pwsh: true
       script: |
+        $ErrorActionPreference = 'Stop'
+        $workspace = '$(Pipeline.Workspace)'
         $artifact = '${{ parameters.artifactName }}'
         $resource = '${{ parameters.pipelineResource }}'
-        if ([string]::IsNullOrWhiteSpace($resource)) {
-          $path = "$(Pipeline.Workspace)/$artifact"
+
+        $preferred = if ([string]::IsNullOrWhiteSpace($resource)) {
+          Join-Path $workspace $artifact
         } else {
-          $path = "$(Pipeline.Workspace)/$resource/$artifact"
+          Join-Path (Join-Path $workspace $resource) $artifact
         }
-        Write-Host "Package path: $path"
+
+        Write-Host "Preferred package path: $preferred"
+        Write-Host "Workspace contents:"
+        Get-ChildItem $workspace -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  $($_.Name)" }
+
+        $dllPath = Join-Path $preferred 'StudentManagementApi.dll'
+        if (Test-Path $dllPath) {
+          $path = $preferred
+        }
+        else {
+          Write-Host "DLL not at preferred path; searching workspace..."
+          $dll = Get-ChildItem -Path $workspace -Filter 'StudentManagementApi.dll' -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -notmatch '[\\/](ref|tests?)[\\/]' } |
+            Select-Object -First 1
+
+          if (-not $dll) {
+            throw "StudentManagementApi.dll was not found under $workspace. The Build stage may not have published the '$artifact' artifact."
+          }
+
+          $path = $dll.DirectoryName
+        }
+
+        Write-Host "Resolved package path: $path"
+        Get-ChildItem $path | Select-Object -First 10 | ForEach-Object { Write-Host "  $($_.Name)" }
         Write-Host "##vso[task.setvariable variable=packagePath]$path"
 
   - task: AzureCLI@2
