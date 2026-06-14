@@ -1,6 +1,6 @@
 # Azure DevOps — Dev & QA pipeline
-# Trigger: push or PR to dev branch
-# Push to dev: build, test, publish artifacts, deploy to Dev + QA environments
+# Auto: push to dev branch → build, test, deploy Dev + QA
+# Manual: Run pipeline → pick branch → toggle Deploy to Dev / QA checkboxes
 
 trigger:
   branches:
@@ -12,6 +12,16 @@ pr:
     include:
       - dev
 
+parameters:
+  - name: deployToDev
+    displayName: Deploy to Dev (manual runs only)
+    type: boolean
+    default: true
+  - name: deployToQA
+    displayName: Deploy to QA (manual runs only)
+    type: boolean
+    default: true
+
 pool:
   vmImage: ubuntu-latest
 
@@ -20,7 +30,6 @@ variables:
   buildConfiguration: Release
   apiProject: StudentManagementApi/StudentManagementApi.csproj
   testProject: StudentManagementApi.Tests/StudentManagementApi.Tests.csproj
-  # Set this in Azure DevOps pipeline variables or variable group
   azureServiceConnection: StudentManagement-Azure
 
 stages:
@@ -94,7 +103,15 @@ stages:
   - stage: DeployDev
     displayName: Deploy — Dev
     dependsOn: Build
-    condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'), eq(variables['Build.SourceBranch'], 'refs/heads/dev'))
+    condition: |
+      and(
+        succeeded(),
+        ne(variables['Build.Reason'], 'PullRequest'),
+        or(
+          and(eq(variables['Build.SourceBranch'], 'refs/heads/dev'), in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI')),
+          and(eq(variables['Build.Reason'], 'Manual'), eq('${{ parameters.deployToDev }}', 'True'))
+        )
+      )
     variables:
       - group: StudentManagement-Dev
     jobs:
@@ -125,7 +142,15 @@ stages:
   - stage: DeployQA
     displayName: Deploy — QA
     dependsOn: Build
-    condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'), eq(variables['Build.SourceBranch'], 'refs/heads/dev'))
+    condition: |
+      and(
+        succeeded(),
+        ne(variables['Build.Reason'], 'PullRequest'),
+        or(
+          and(eq(variables['Build.SourceBranch'], 'refs/heads/dev'), in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI')),
+          and(eq(variables['Build.Reason'], 'Manual'), eq('${{ parameters.deployToQA }}', 'True'))
+        )
+      )
     variables:
       - group: StudentManagement-QA
     jobs:

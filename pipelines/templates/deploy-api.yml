@@ -7,13 +7,21 @@ parameters:
     type: string
   - name: apiConnectionString
     type: string
+  - name: pipelineResource
+    type: string
+    default: ''
   - name: artifactName
     type: string
     default: api
 
 steps:
-  - download: current
-    artifact: ${{ parameters.artifactName }}
+  - ${{ if eq(parameters.pipelineResource, '') }}:
+    - download: current
+      artifact: ${{ parameters.artifactName }}
+
+  - ${{ if ne(parameters.pipelineResource, '') }}:
+    - download: ${{ parameters.pipelineResource }}
+      artifact: ${{ parameters.artifactName }}
 
   - task: AzureAppServiceSettings@1
     displayName: Configure App Service settings
@@ -41,4 +49,4 @@ steps:
       azureSubscription: ${{ parameters.azureServiceConnection }}
       appType: webApp
       appName: ${{ parameters.azureWebAppName }}
-      package: $(Pipeline.Workspace)/${{ parameters.artifactName }}
+      package: $(Pipeline.Workspace)${{ if ne(parameters.pipelineResource, '') }}/${{ parameters.pipelineResource }}${{ endif }}/${{ parameters.artifactName }}

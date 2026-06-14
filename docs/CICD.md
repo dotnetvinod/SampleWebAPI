@@ -8,6 +8,7 @@ This solution uses **Azure DevOps Pipelines** with **Environments** and **Variab
 |------|---------|---------|
 | `azure-pipelines.yml` | Push/PR to **`dev`** | Build, test, artifacts; deploy to **Dev + QA** on push |
 | `azure-pipelines-prod.yml` | Push to **`main`** / manual | Build, test, deploy to **Production** |
+| `azure-pipelines-manual-deploy.yml` | **Manual only** | Deploy a **specific CI build** to Dev, QA, or Prod |
 
 Reusable templates live in `pipelines/templates/`:
 
@@ -110,6 +111,13 @@ Authorize variable groups when prompted on first pipeline run.
 2. Select `/azure-pipelines-prod.yml`.
 3. Save.
 
+**Pipeline 3 — Manual Deploy (promote any build)**
+
+1. **Pipelines** → **New pipeline** → same repo.
+2. Select `/azure-pipelines-manual-deploy.yml`.
+3. Rename to **Manual Deploy** (optional).
+4. Edit `source:` in the YAML to match your CI pipeline name (e.g. `dotnetvinod.SampleWebAPI`).
+
 ### 5. SQL permissions
 
 Grant the SQL login used in variable groups permission to create databases (first run) and deploy objects:
@@ -120,6 +128,45 @@ Grant the SQL login used in variable groups permission to create databases (firs
 CREATE USER [sqladmin] WITH PASSWORD = '...';  -- if not exists
 ALTER ROLE db_owner ADD MEMBER [sqladmin];
 ```
+
+---
+
+## Why Deploy Dev / QA was skipped
+
+Deploy stages run only when **all** of these are true:
+
+| Condition | Required |
+|-----------|----------|
+| Build succeeded | Yes |
+| Not a Pull Request | Yes |
+| Push to **`dev`** branch OR manual run with **Deploy to Dev/QA** checked | Yes |
+
+**Most common cause:** pipeline was **Run manually** from **`main`** or **`Feature`** — not from a push to **`dev`**.
+
+**Fix — automatic deploy:**
+
+```powershell
+git checkout dev
+git push origin dev
+```
+
+**Fix — manual deploy from same pipeline:** **Run pipeline** → pick branch → check **Deploy to Dev** / **Deploy to QA** → Run.
+
+**Fix — deploy a specific past build:** use **Manual Deploy** pipeline (below).
+
+To see the exact reason: open the run → click skipped stage → read **"Stage not run because of condition"**.
+
+---
+
+## Manual deploy — specific build to any environment
+
+Use **`azure-pipelines-manual-deploy.yml`** to deploy an existing build without rebuilding.
+
+1. **Pipelines** → **Manual Deploy** → **Run pipeline**
+2. **Resources** → `ciBuild` → select the build run (e.g. `#20260614.2`)
+3. **Target environment** → `dev`, `qa`, or `prod`
+4. **Run database scripts** → checked = run SQL scripts first
+5. **Run**
 
 ---
 
