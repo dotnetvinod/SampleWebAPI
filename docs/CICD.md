@@ -173,40 +173,83 @@ To see the exact reason: open the run → click skipped stage → read **"Stage 
 
 ---
 
+## SQL firewall — one-time setup (Dev / QA)
+
+Automated firewall in the pipeline is **OFF by default** (`enableAutomatedSqlFirewall: false`).
+
+Microsoft-hosted agents use **changing IP addresses**. Your service connection also needs **Reader + SQL Server Contributor** to automate firewall rules — until that is configured, use this **one-time Portal setup**:
+
+### Step 1 — Open SQL Server firewall (Dev)
+
+1. [Azure Portal](https://portal.azure.com) → **SQL Server `cruddev`**
+2. **Networking** (or **Firewalls and virtual networks**)
+3. Under **Firewall rules**, click **+ Add a firewall rule**:
+   - Rule name: `AllowPipelineAgentsDev`
+   - Start IP: `0.0.0.0`
+   - End IP: `255.255.255.255`
+4. Enable **Allow Azure services and resources to access this server**
+5. **Save**
+
+> **Dev only:** `0.0.0.0`–`255.255.255.255` allows any IP. For production, use specific IPs or private endpoints instead.
+
+Repeat on QA/Prod SQL servers when you deploy to those environments.
+
+### Step 2 — Variable group (required)
+
+**Pipelines → Library → StudentManagement-Dev** must include:
+
+| Variable | Secret? | Example |
+|----------|---------|---------|
+| `sqlServer` | No | `cruddev.database.windows.net` |
+| `sqlDatabase` | No | `StudentDb_Dev` |
+| `sqlUsername` | No | your SQL login |
+| `sqlPassword` | Yes | your SQL password |
+| `apiConnectionString` | Yes | full connection string |
+| `azureWebAppName` | No | your dev web app name |
+
+`sqlResourceGroup` is only needed if you enable automated firewall (below).
+
+### Step 3 — Push and run pipeline
+
+After Portal firewall is saved, push to `dev` — **Deploy database scripts** should connect without the optional firewall step.
+
+---
+
+## Optional — enable automated firewall later
+
+When your Azure admin grants the service connection:
+
+1. **Reader** on subscription (to look up SQL server resource group)
+2. **SQL Server Contributor** on server `cruddev`
+
+Then set in **azure-pipelines.yml** or pipeline variables:
+
+```yaml
+enableAutomatedSqlFirewall: 'true'
+```
+
+And add `sqlResourceGroup` to each variable group (from SQL server **Overview → Resource group**).
+
+Service principal object id (from your logs): `d9d290aa-7632-4181-9275-9e434e3a9d29`
+
+```bash
+az role assignment create \
+  --assignee "d9d290aa-7632-4181-9275-9e434e3a9d29" \
+  --role "SQL Server Contributor" \
+  --scope "/subscriptions/511a3bfd-7085-457c-9f93-96c48e0681f2/resourceGroups/YOUR_RG/providers/Microsoft.Sql/servers/cruddev"
+```
+
+---
+
 ## SQL firewall error (Agent IP not allowed)
 
-If deploy fails with:
+If deploy still fails with:
 
 ```
 Client with IP address 'x.x.x.x' is not allowed to access the server
 ```
 
-**Cause:** Microsoft-hosted pipeline agents use dynamic public IPs. Azure SQL blocks them by default.
-
-**Fix (recommended — automated in pipeline):** Add `sqlResourceGroup` to each variable group. The pipeline will temporarily allow the agent IP via Azure CLI, run scripts, then remove the rule.
-
-**Fix (manual — Azure Portal):**
-
-1. Open SQL Server **`cruddev`** → **Networking**
-2. Enable **Allow Azure services and resources to access this server**
-3. Optionally add your own IP for SSMS access
-
-The service connection (`StudentManagement-Azure`) needs permission to manage firewall rules (e.g. **Contributor** or **SQL Server Contributor** on the SQL server or resource group).
-
-Grant access with Azure CLI (replace values):
-
-```bash
-az role assignment create \
-  --assignee "YOUR-SERVICE-PRINCIPAL-OBJECT-ID" \
-  --role "SQL Server Contributor" \
-  --scope "/subscriptions/YOUR-SUBSCRIPTION-ID/resourceGroups/YOUR-RG/providers/Microsoft.Sql/servers/cruddev"
-```
-
-Find the service principal object id in **Project Settings → Service connections → StudentManagement-Azure → Manage Service Principal**.
-
-Also verify `sqlResourceGroup` in your variable group is the **actual resource group name** (not empty, not a macro).
-
-**Portal alternative (no pipeline firewall automation):** Azure Portal → SQL Server `cruddev` → **Networking** → enable **Allow Azure services and resources to access this server** → Save. Then remove the firewall steps by leaving `sqlResourceGroup` empty in the variable group (firewall tasks are skipped when empty).
+The Portal firewall rule was not saved, or you are deploying to a **different SQL server** than the one you configured. Confirm `sqlServer` in the variable group matches the server where you added the rule.
 
 ---
 

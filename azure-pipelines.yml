@@ -28,6 +28,8 @@ variables:
   apiProject: StudentManagementApi/StudentManagementApi.csproj
   testProject: StudentManagementApi.Tests/StudentManagementApi.Tests.csproj
   azureServiceConnection: StudentManagement-Azure
+  # Set to 'true' only after granting SQL Server Contributor + Reader to the service connection.
+  enableAutomatedSqlFirewall: 'false'
 
 stages:
   - stage: Build

@@ -15,6 +15,7 @@ variables:
   apiProject: StudentManagementApi/StudentManagementApi.csproj
   testProject: StudentManagementApi.Tests/StudentManagementApi.Tests.csproj
   azureServiceConnection: StudentManagement-Azure
+  enableAutomatedSqlFirewall: 'false'
 
 stages:
   - stage: Build

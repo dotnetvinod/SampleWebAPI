@@ -5,8 +5,8 @@ parameters:
 
 steps:
   - task: AzureCLI@2
-    displayName: Open SQL firewall for pipeline agent
-    condition: succeeded()
+    displayName: Open SQL firewall for pipeline agent (optional)
+    condition: and(succeeded(), eq(variables['enableAutomatedSqlFirewall'], 'true'))
     env:
       DEPLOY_SQL_SERVER: $(sqlServer)
       DEPLOY_SQL_RESOURCE_GROUP: $(sqlResourceGroup)
@@ -40,15 +40,14 @@ steps:
       DEPLOY_SQL_DATABASE: $(sqlDatabase)
       DEPLOY_SQL_USERNAME: $(sqlUsername)
       SQL_PASSWORD: $(sqlPassword)
-      DEPLOY_SQL_FIREWALL_MANAGED: $(sqlFirewallManaged)
     inputs:
       targetType: inline
       pwsh: true
       script: |
         $ErrorActionPreference = 'Stop'
         $sqlServer = $env:DEPLOY_SQL_SERVER
-        if ($sqlServer -match 'database\.windows\.net' -and $env:DEPLOY_SQL_FIREWALL_MANAGED -ne 'true') {
-          throw 'Azure SQL firewall was not opened. Check the Open SQL firewall step.'
+        if ($sqlServer -match 'database\.windows\.net') {
+          Write-Host 'Azure SQL: ensure SQL Server firewall allows pipeline agent IPs (see docs/CICD.md).'
         }
         $scriptParams = @{
           Server   = $sqlServer
@@ -62,8 +61,8 @@ steps:
         & '$(Build.SourcesDirectory)/StudentManagement.Database/deploy/Deploy-Database.ps1' @scriptParams
 
   - task: AzureCLI@2
-    displayName: Close SQL firewall for pipeline agent
-    condition: and(always(), eq(variables['sqlFirewallManaged'], 'true'), ne(variables['sqlFirewallRuleName'], ''))
+    displayName: Close SQL firewall for pipeline agent (optional)
+    condition: and(always(), eq(variables['enableAutomatedSqlFirewall'], 'true'), eq(variables['sqlFirewallManaged'], 'true'), ne(variables['sqlFirewallRuleName'], ''))
     env:
       DEPLOY_SQL_RESOURCE_GROUP: $(sqlResourceGroupResolved)
       DEPLOY_SQL_SERVER_SHORT_NAME: $(sqlServerShortName)
