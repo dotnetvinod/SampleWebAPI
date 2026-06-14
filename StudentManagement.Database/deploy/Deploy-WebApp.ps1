@@ -17,15 +17,22 @@ function New-SqlAzureConnectionString {
         [string]$Password
     )
 
+    $dataSource = if ($Server -match ',') { $Server } else { "tcp:$Server,1433" }
+
     Add-Type -AssemblyName 'System.Data' | Out-Null
     $builder = New-Object System.Data.SqlClient.SqlConnectionStringBuilder
-    $builder['Data Source'] = if ($Server -match ',') { $Server } else { "tcp:$Server,1433" }
-    $builder['Initial Catalog'] = $Database
-    $builder['User ID'] = $Username
-    $builder['Password'] = $Password
-    $builder['Encrypt'] = $true
-    $builder['Trust Server Certificate'] = $false
-    $builder['Connection Timeout'] = 30
+    $builder.DataSource = $dataSource
+    $builder.InitialCatalog = $Database
+    $builder.UserID = $Username
+    $builder.Password = $Password
+    $builder.Encrypt = $true
+    $builder.ConnectTimeout = 30
+
+    # Property names work on Linux agents; spaced index keys do not.
+    if ($builder.PSObject.Properties.Name -contains 'TrustServerCertificate') {
+        $builder.TrustServerCertificate = $false
+    }
+
     return $builder.ConnectionString
 }
 
@@ -74,6 +81,9 @@ function Resolve-ConnectionString {
         -and -not (Test-InvalidPipelineValue $SqlPassword)) {
         Write-Host 'Building connection string from sqlServer/sqlDatabase/sqlUsername/sqlPassword.'
         Write-Host "SQL login for API: $SqlUsername"
+        if ($SqlUsername -eq ($SqlServer -replace '\..*$', '')) {
+            Write-Warning "sqlUsername '$SqlUsername' matches the SQL server short name. Use the SQL authentication login (e.g. sqladmin), not the server name."
+        }
         return (New-SqlAzureConnectionString -Server $SqlServer -Database $SqlDatabase -Username $SqlUsername -Password $SqlPassword)
     }
 
