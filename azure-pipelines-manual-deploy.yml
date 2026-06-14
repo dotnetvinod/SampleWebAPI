@@ -1,0 +1,87 @@
+# Manual deployment pipeline — deploy a specific CI build to Dev, QA, or Prod
+#
+# Setup:
+#   1. Create this as a new pipeline pointing to this YAML file
+#   2. Update 'source' below to match your CI pipeline name in Azure DevOps
+#      (e.g. dotnetvinod.SampleWebAPI — see Pipelines list)
+#
+# Usage:
+#   Pipelines → Manual Deploy → Run pipeline
+#   → Select which CI build run to use (Resources)
+#   → Pick target environment
+#   → Run
+
+trigger: none
+pr: none
+
+parameters:
+  - name: targetEnvironment
+    displayName: Target environment
+    type: string
+    default: dev
+    values:
+      - dev
+      - qa
+      - prod
+
+  - name: runDatabaseScripts
+    displayName: Run database scripts before API deploy
+    type: boolean
+    default: true
+
+resources:
+  pipelines:
+    - pipeline: ciBuild
+      # Change this to your CI pipeline name shown in Azure DevOps → Pipelines
+      source: dotnetvinod.SampleWebAPI
+      trigger: none
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  - ${{ if eq(parameters.targetEnvironment, 'dev') }}:
+    - group: StudentManagement-Dev
+  - ${{ if eq(parameters.targetEnvironment, 'qa') }}:
+    - group: StudentManagement-QA
+  - ${{ if eq(parameters.targetEnvironment, 'prod') }}:
+    - group: StudentManagement-Prod
+  - name: azureServiceConnection
+    value: StudentManagement-Azure
+  - name: aspnetcoreEnvironment
+    ${{ if eq(parameters.targetEnvironment, 'dev') }}:
+      value: Development
+    ${{ elseif eq(parameters.targetEnvironment, 'qa') }}:
+      value: QA
+    ${{ else }}:
+      value: Production
+
+stages:
+  - stage: Deploy
+    displayName: Deploy to ${{ parameters.targetEnvironment }}
+    jobs:
+      - deployment: DeployManual
+        displayName: Deploy selected build
+        environment: ${{ parameters.targetEnvironment }}
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+
+                - ${{ if eq(parameters.runDatabaseScripts, true) }}:
+                  - template: pipelines/templates/deploy-database.yml
+                    parameters:
+                      sqlServer: $(sqlServer)
+                      sqlDatabase: $(sqlDatabase)
+                      sqlUsername: $(sqlUsername)
+                      sqlPassword: $(sqlPassword)
+
+                - template: pipelines/templates/deploy-api.yml
+                  parameters:
+                    azureServiceConnection: $(azureServiceConnection)
+                    azureWebAppName: $(azureWebAppName)
+                    aspnetcoreEnvironment: $(aspnetcoreEnvironment)
+                    apiConnectionString: $(apiConnectionString)
+                    pipelineResource: ciBuild
+                    artifactName: api
