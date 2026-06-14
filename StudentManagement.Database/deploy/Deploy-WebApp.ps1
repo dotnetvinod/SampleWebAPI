@@ -9,6 +9,14 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+function Format-ConnectionStringValue {
+    param([string]$Value)
+    if ($Value -match '[;"'']') {
+        return "`"$($Value -replace '"', '""')`""
+    }
+    return $Value
+}
+
 function New-SqlAzureConnectionString {
     param(
         [string]$Server,
@@ -18,22 +26,11 @@ function New-SqlAzureConnectionString {
     )
 
     $dataSource = if ($Server -match ',') { $Server } else { "tcp:$Server,1433" }
+    $user = Format-ConnectionStringValue $Username
+    $pass = Format-ConnectionStringValue $Password
+    $catalog = Format-ConnectionStringValue $Database
 
-    Add-Type -AssemblyName 'System.Data' | Out-Null
-    $builder = New-Object System.Data.SqlClient.SqlConnectionStringBuilder
-    $builder.DataSource = $dataSource
-    $builder.InitialCatalog = $Database
-    $builder.UserID = $Username
-    $builder.Password = $Password
-    $builder.Encrypt = $true
-    $builder.ConnectTimeout = 30
-
-    # Property names work on Linux agents; spaced index keys do not.
-    if ($builder.PSObject.Properties.Name -contains 'TrustServerCertificate') {
-        $builder.TrustServerCertificate = $false
-    }
-
-    return $builder.ConnectionString
+    return "Server=$dataSource;Initial Catalog=$catalog;User ID=$user;Password=$pass;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;"
 }
 
 function Set-WebAppConnectionString {
