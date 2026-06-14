@@ -1,11 +1,7 @@
 parameters:
   - name: azureServiceConnection
     type: string
-  - name: azureWebAppName
-    type: string
   - name: aspnetcoreEnvironment
-    type: string
-  - name: apiConnectionString
     type: string
   - name: pipelineResource
     type: string
@@ -40,32 +36,17 @@ steps:
         Write-Host "Package path: $path"
         Write-Host "##vso[task.setvariable variable=packagePath]$path"
 
-  - task: AzureAppServiceSettings@1
-    displayName: Configure App Service settings
+  - task: AzureCLI@2
+    displayName: Configure and deploy Web App
     condition: succeeded()
+    env:
+      DEPLOY_WEBAPP_NAME: $(azureWebAppName)
+      DEPLOY_WEBAPP_RESOURCE_GROUP: $(azureResourceGroup)
+      DEPLOY_ASPNETCORE_ENVIRONMENT: ${{ parameters.aspnetcoreEnvironment }}
+      DEPLOY_CONNECTION_STRING: $(apiConnectionString)
+      DEPLOY_PACKAGE_PATH: $(packagePath)
     inputs:
       azureSubscription: ${{ parameters.azureServiceConnection }}
-      appName: ${{ parameters.azureWebAppName }}
-      resourceGroupName: ''
-      appSettings: |
-        [
-          {
-            "name": "ASPNETCORE_ENVIRONMENT",
-            "value": "${{ parameters.aspnetcoreEnvironment }}",
-            "slotSetting": false
-          },
-          {
-            "name": "ConnectionStrings__DefaultConnection",
-            "value": "${{ parameters.apiConnectionString }}",
-            "slotSetting": false
-          }
-        ]
-
-  - task: AzureWebApp@1
-    displayName: Deploy API to Azure Web App
-    condition: succeeded()
-    inputs:
-      azureSubscription: ${{ parameters.azureServiceConnection }}
-      appType: webApp
-      appName: ${{ parameters.azureWebAppName }}
-      package: $(packagePath)
+      scriptType: pscore
+      scriptLocation: scriptPath
+      scriptPath: $(Build.SourcesDirectory)/StudentManagement.Database/deploy/Deploy-WebApp.ps1

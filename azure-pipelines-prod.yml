@@ -108,7 +108,5 @@ stages:
                 - template: pipelines/templates/deploy-api.yml
                   parameters:
                     azureServiceConnection: $(azureServiceConnection)
-                    azureWebAppName: $(azureWebAppName)
                     aspnetcoreEnvironment: Production
-                    apiConnectionString: $(apiConnectionString)
                     artifactName: api
