@@ -14,6 +14,69 @@ function Test-InvalidPipelineValue {
     return [string]::IsNullOrWhiteSpace($Value) -or $Value -match '^\$\([^)]+\)$'
 }
 
+function Resolve-WebAppName {
+    param(
+        [string]$Candidate,
+        [string]$ResourceGroup
+    )
+
+    $inputValue = $Candidate.Trim()
+    $hostnameHint = $inputValue -replace '^https?://', '' -replace '/.*$', ''
+
+    Write-Host "Resolving Web App name from input: $inputValue"
+
+    $direct = az webapp show --resource-group $ResourceGroup --name $inputValue -o json 2>&1
+    if ($LASTEXITCODE -eq 0) {
+        return @{ Name = $inputValue; Json = ($direct | ConvertFrom-Json) }
+    }
+    $directText = ($direct | Out-String)
+    if ($directText -match 'AuthorizationFailed|authorization to perform action') {
+        throw "PERMISSION DENIED: Grant 'Website Contributor' on resource group '$ResourceGroup' to service connection 'StudentManagement-Azure' (object id d9d290aa-7632-4181-9275-9e434e3a9d29)."
+    }
+
+    if ($hostnameHint -match '\.azurewebsites\.net') {
+        Write-Host "Input looks like a hostname, not a resource Name. Searching resource group..."
+        $appsJson = az webapp list --resource-group $ResourceGroup -o json 2>$null
+        if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($appsJson)) {
+            $apps = $appsJson | ConvertFrom-Json
+            foreach ($app in $apps) {
+                if ($app.defaultHostName -eq $hostnameHint) {
+                    Write-Host "Matched hostname to resource Name: $($app.name)"
+                    return @{ Name = $app.name; Json = $app }
+                }
+            }
+        }
+    }
+
+    $appsJson = az webapp list --resource-group $ResourceGroup -o json 2>$null
+    if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($appsJson)) {
+        $apps = $appsJson | ConvertFrom-Json
+        foreach ($app in $apps) {
+            if ($app.name -eq $inputValue -or $app.name -eq ($hostnameHint.Split('.')[0])) {
+                return @{ Name = $app.name; Json = $app }
+            }
+        }
+
+        if ($apps.Count -gt 0) {
+            Write-Host 'Web apps in this resource group:'
+            foreach ($app in $apps) {
+                Write-Host "  Name: $($app.name)  |  URL: https://$($app.defaultHostName)"
+            }
+        }
+    }
+
+    throw @"
+Could not find Web App '$inputValue' in '$ResourceGroup'.
+
+azureWebAppName must be the short Name from Portal Overview — NOT the full URL.
+
+Wrong:  student-api-dev-fwfnbue5g2cje9at.centralindia-01.azurewebsites.net
+Right:  student-api-dev   (copy the Name field only)
+
+Portal -> App Service -> Overview -> Name
+"@
+}
+
 if (Test-InvalidPipelineValue $WebAppName) { $WebAppName = $env:DEPLOY_WEBAPP_NAME }
 if (Test-InvalidPipelineValue $ResourceGroup) { $ResourceGroup = $env:DEPLOY_WEBAPP_RESOURCE_GROUP }
 if (Test-InvalidPipelineValue $AspNetCoreEnvironment) { $AspNetCoreEnvironment = $env:DEPLOY_ASPNETCORE_ENVIRONMENT }
@@ -37,23 +100,17 @@ if (-not (Test-Path $dllPath)) {
 
 $account = az account show -o json | ConvertFrom-Json
 Write-Host "Pipeline subscription: $($account.name) ($($account.id))"
-Write-Host "Target Web App: $WebAppName"
 Write-Host "Resource group: $ResourceGroup"
 Write-Host "Package path: $PackagePath"
 Write-Host "Package files:"
 Get-ChildItem $PackagePath | Select-Object -First 15 | ForEach-Object { Write-Host "  $($_.Name)" }
 
-$showOutput = az webapp show --resource-group $ResourceGroup --name $WebAppName -o json 2>&1
-if ($LASTEXITCODE -ne 0) {
-    $details = ($showOutput | Out-String).Trim()
-    if ($details -match 'AuthorizationFailed|authorization to perform action') {
-        throw "PERMISSION DENIED: Grant 'Website Contributor' on resource group '$ResourceGroup' to service connection 'StudentManagement-Azure' (object id d9d290aa-7632-4181-9275-9e434e3a9d29)."
-    }
-    throw "Web App '$WebAppName' was not found in '$ResourceGroup'. Set azureWebAppName to the exact Name shown in Portal Overview. Details: $details"
-}
-
-$appJson = $showOutput | ConvertFrom-Json
+$resolved = Resolve-WebAppName -Candidate $WebAppName -ResourceGroup $ResourceGroup
+$WebAppName = $resolved.Name
+$appJson = $resolved.Json
 $hostname = $appJson.defaultHostName
+
+Write-Host "Target Web App Name: $WebAppName"
 Write-Host "Verified Web App exists. Kind: $($appJson.kind)"
 Write-Host "Default hostname: $hostname"
 
