@@ -1,6 +1,6 @@
 # Database Scripts — Student Management
 
-SQL Server scripts for the Student Management API. Deployed automatically via GitHub Actions.
+SQL Server scripts for the Student Management API. Deployed automatically via Azure DevOps Pipelines.
 
 ## Structure
 

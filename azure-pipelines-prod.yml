@@ -1,0 +1,107 @@
+# Azure DevOps — Production pipeline
+# Trigger: push to main branch or manual run
+# Deploys to Production environment (configure approval checks on the prod environment)
+
+trigger:
+  branches:
+    include:
+      - main
+
+pr: none
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  dotnetVersion: '8.0.x'
+  buildConfiguration: Release
+  apiProject: StudentManagementApi/StudentManagementApi.csproj
+  testProject: StudentManagementApi.Tests/StudentManagementApi.Tests.csproj
+  azureServiceConnection: StudentManagement-Azure
+
+stages:
+  - stage: Build
+    displayName: Build & Test
+    jobs:
+      - job: BuildAndTest
+        displayName: Restore, build, test, publish
+        steps:
+          - checkout: self
+
+          - task: UseDotNet@2
+            displayName: Install .NET SDK
+            inputs:
+              packageType: sdk
+              version: $(dotnetVersion)
+
+          - task: DotNetCoreCLI@2
+            displayName: Restore
+            inputs:
+              command: restore
+              projects: |
+                $(apiProject)
+                $(testProject)
+
+          - task: DotNetCoreCLI@2
+            displayName: Build
+            inputs:
+              command: build
+              projects: |
+                $(apiProject)
+                $(testProject)
+              arguments: --configuration $(buildConfiguration) --no-restore
+
+          - task: DotNetCoreCLI@2
+            displayName: Test
+            inputs:
+              command: test
+              projects: $(testProject)
+              arguments: --configuration $(buildConfiguration) --no-build --logger trx
+              publishTestResults: true
+
+          - task: DotNetCoreCLI@2
+            displayName: Publish API
+            inputs:
+              command: publish
+              publishWebProjects: false
+              projects: $(apiProject)
+              arguments: --configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)/api /p:UseAppHost=false
+              zipAfterPublish: false
+
+          - task: PublishPipelineArtifact@1
+            displayName: Publish API artifact
+            inputs:
+              targetPath: $(Build.ArtifactStagingDirectory)/api
+              artifact: api
+              publishLocation: pipeline
+
+  - stage: DeployProd
+    displayName: Deploy — Production
+    dependsOn: Build
+    condition: succeeded()
+    variables:
+      - group: StudentManagement-Prod
+    jobs:
+      - deployment: DeployProd
+        displayName: Deploy database and API to Production
+        environment: prod
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+
+                - template: pipelines/templates/deploy-database.yml
+                  parameters:
+                    sqlServer: $(sqlServer)
+                    sqlDatabase: $(sqlDatabase)
+                    sqlUsername: $(sqlUsername)
+                    sqlPassword: $(sqlPassword)
+
+                - template: pipelines/templates/deploy-api.yml
+                  parameters:
+                    azureServiceConnection: $(azureServiceConnection)
+                    azureWebAppName: $(azureWebAppName)
+                    aspnetcoreEnvironment: Production
+                    apiConnectionString: $(apiConnectionString)
+                    artifactName: api

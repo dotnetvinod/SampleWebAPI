@@ -1,0 +1,44 @@
+parameters:
+  - name: azureServiceConnection
+    type: string
+  - name: azureWebAppName
+    type: string
+  - name: aspnetcoreEnvironment
+    type: string
+  - name: apiConnectionString
+    type: string
+  - name: artifactName
+    type: string
+    default: api
+
+steps:
+  - download: current
+    artifact: ${{ parameters.artifactName }}
+
+  - task: AzureAppServiceSettings@1
+    displayName: Configure App Service settings
+    inputs:
+      azureSubscription: ${{ parameters.azureServiceConnection }}
+      appName: ${{ parameters.azureWebAppName }}
+      resourceGroupName: ''
+      appSettings: |
+        [
+          {
+            "name": "ASPNETCORE_ENVIRONMENT",
+            "value": "${{ parameters.aspnetcoreEnvironment }}",
+            "slotSetting": false
+          },
+          {
+            "name": "ConnectionStrings__DefaultConnection",
+            "value": "${{ parameters.apiConnectionString }}",
+            "slotSetting": false
+          }
+        ]
+
+  - task: AzureWebApp@1
+    displayName: Deploy API to Azure Web App
+    inputs:
+      azureSubscription: ${{ parameters.azureServiceConnection }}
+      appType: webApp
+      appName: ${{ parameters.azureWebAppName }}
+      package: $(Pipeline.Workspace)/${{ parameters.artifactName }}
