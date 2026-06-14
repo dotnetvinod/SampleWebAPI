@@ -8,23 +8,28 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-if ([string]::IsNullOrWhiteSpace($SqlServer)) {
+function Test-InvalidPipelineValue {
+    param([string]$Value)
+    return [string]::IsNullOrWhiteSpace($Value) -or $Value -match '^\$\([^)]+\)$'
+}
+
+if (Test-InvalidPipelineValue $SqlServer) {
     $SqlServer = $env:DEPLOY_SQL_SERVER
 }
-if ([string]::IsNullOrWhiteSpace($ResourceGroup)) {
+if (Test-InvalidPipelineValue $ResourceGroup) {
     $ResourceGroup = $env:DEPLOY_SQL_RESOURCE_GROUP
 }
-if ([string]::IsNullOrWhiteSpace($BuildId)) {
+if (Test-InvalidPipelineValue $BuildId) {
     $BuildId = $env:DEPLOY_BUILD_ID
 }
 if (-not [string]::IsNullOrWhiteSpace($env:DEPLOY_SERVICE_CONNECTION)) {
     $ServiceConnectionName = $env:DEPLOY_SERVICE_CONNECTION
 }
 
-if ([string]::IsNullOrWhiteSpace($SqlServer)) {
-    throw 'SqlServer is required. Set sqlServer in the variable group.'
+if (Test-InvalidPipelineValue $SqlServer) {
+    throw 'SqlServer is required. Set sqlServer in the StudentManagement-Dev variable group.'
 }
-if ([string]::IsNullOrWhiteSpace($BuildId)) {
+if (Test-InvalidPipelineValue $BuildId) {
     throw 'BuildId is required.'
 }
 
@@ -38,13 +43,25 @@ $agentIp = (Invoke-RestMethod -Uri 'https://api.ipify.org?format=text').Trim()
 $serverName = $SqlServer.Split('.')[0]
 $ruleName = "ado-build-$BuildId"
 
-if ([string]::IsNullOrWhiteSpace($ResourceGroup)) {
+if (Test-InvalidPipelineValue $ResourceGroup) {
     Write-Host "sqlResourceGroup not set. Looking up resource group for server '$serverName'..."
+
     $ResourceGroup = az sql server list --query "[?name=='$serverName'].resourceGroup | [0]" -o tsv
+
+    if (Test-InvalidPipelineValue $ResourceGroup) {
+        $ResourceGroup = az resource list `
+            --name $serverName `
+            --resource-type 'Microsoft.Sql/servers' `
+            --query '[0].resourceGroup' -o tsv
+    }
 }
 
-if ([string]::IsNullOrWhiteSpace($ResourceGroup)) {
-    throw "Could not resolve resource group for SQL server '$serverName'. Add sqlResourceGroup to the variable group or grant Reader on the subscription."
+if (Test-InvalidPipelineValue $ResourceGroup) {
+    throw @"
+Could not resolve resource group for SQL server '$serverName'.
+Add variable 'sqlResourceGroup' to your StudentManagement-Dev variable group (Azure Portal -> SQL server cruddev -> Overview -> Resource group),
+OR grant 'Reader' on the subscription to service connection '$ServiceConnectionName'.
+"@
 }
 
 Write-Host "Agent IP: $agentIp"
@@ -60,7 +77,7 @@ az sql server firewall-rule create `
     --end-ip-address $agentIp
 
 if ($LASTEXITCODE -ne 0) {
-    throw "Failed to create SQL firewall rule. Grant 'SQL Server Contributor' on server '$serverName' to service connection '$ServiceConnectionName', or add IP $agentIp manually in Azure Portal."
+    throw "Failed to create SQL firewall rule on '$serverName' in RG '$ResourceGroup'. Grant 'SQL Server Contributor' to service connection '$ServiceConnectionName' (object id from service connection page), or add IP $agentIp manually: Portal -> SQL server cruddev -> Networking -> Add client IP."
 }
 
 Write-Host "##vso[task.setvariable variable=sqlFirewallManaged]true"
