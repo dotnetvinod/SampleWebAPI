@@ -1,0 +1,35 @@
+parameters:
+  - name: sqlServer
+    type: string
+  - name: sqlDatabase
+    type: string
+  - name: sqlUsername
+    type: string
+  - name: sqlPassword
+    type: string
+
+steps:
+  - task: PowerShell@2
+    displayName: Install sqlcmd (Linux)
+    condition: eq(variables['Agent.OS'], 'Linux')
+    inputs:
+      targetType: inline
+      script: |
+        if (-not (Get-Command sqlcmd -ErrorAction SilentlyContinue)) {
+          curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | sudo gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg
+          echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/ubuntu/22.04/prod jammy main" | sudo tee /etc/apt/sources.list.d/mssql-release.list
+          sudo apt-get update
+          sudo ACCEPT_EULA=Y apt-get install -y mssql-tools18 unixodbc-dev
+          echo "##vso[task.prependpath]/opt/mssql-tools18/bin"
+        }
+
+  - task: PowerShell@2
+    displayName: Deploy database scripts
+    inputs:
+      filePath: $(Build.SourcesDirectory)/StudentManagement.Database/deploy/Deploy-Database.ps1
+      arguments: >-
+        -Server "${{ parameters.sqlServer }}"
+        -Database "${{ parameters.sqlDatabase }}"
+        -Username "${{ parameters.sqlUsername }}"
+        -Password "${{ parameters.sqlPassword }}"
+      pwsh: true

@@ -18,8 +18,10 @@ SampleWebAPI/
 │   ├── Scripts/
 │   └── deploy/
 ├── StudentManagementApi.Tests/     # xUnit + Moq
-├── .github/workflows/              # CI/CD pipelines
-└── docs/CICD.md                    # Deployment setup guide
+├── pipelines/                      # Azure DevOps YAML templates
+├── azure-pipelines.yml             # Dev + QA pipeline
+├── azure-pipelines-prod.yml        # Production pipeline
+└── docs/CICD.md                    # Azure DevOps setup guide
 ```
 
 ## Prerequisites
@@ -53,13 +55,13 @@ dotnet user-secrets set "ConnectionStrings:DefaultConnection" "Server=...;Databa
 
 Or override in `appsettings.Development.json` for local SQL Server only.
 
-## CI/CD
+## CI/CD (Azure DevOps)
 
 Push to **`dev`** → build, test, publish artifacts, deploy database + API to **Dev** and **QA**.
 
-Push to **`main`** → build, test, deploy to **Production** (with optional approval gate).
+Push to **`main`** → build, test, deploy to **Production** (with optional approval on the `prod` environment).
 
-See **[docs/CICD.md](docs/CICD.md)** for GitHub environment secrets and Azure setup.
+See **[docs/CICD.md](docs/CICD.md)** for Azure DevOps environments, variable groups, and service connection setup.
 
 ## Run the API
 
