@@ -40,7 +40,37 @@ function Set-WebAppConnectionString {
         [string]$ConnectionString
     )
 
-    $settingsFile = Join-Path ([System.IO.Path]::GetTempPath()) "connstrings-$(Get-Random).json"
+    if ($ConnectionString -match '(?:User ID|Uid)=([^;]+)') {
+        Write-Host "Applying connection string for User ID: $($Matches[1].Trim())"
+    }
+
+    # ASP.NET Core on App Service reads ConnectionStrings__DefaultConnection from app settings.
+    az webapp config appsettings delete `
+        --resource-group $ResourceGroup `
+        --name $WebAppName `
+        --setting-names ConnectionStrings__DefaultConnection 2>$null | Out-Null
+
+    $appSettingsFile = Join-Path ([System.IO.Path]::GetTempPath()) "appsettings-$(Get-Random).json"
+    @(
+        @{
+            name = 'ConnectionStrings__DefaultConnection'
+            value = $ConnectionString
+            slotSetting = $false
+        }
+    ) | ConvertTo-Json -Depth 3 | Set-Content -Path $appSettingsFile -Encoding utf8
+
+    az webapp config appsettings set `
+        --resource-group $ResourceGroup `
+        --name $WebAppName `
+        --settings "@$appSettingsFile"
+
+    Remove-Item $appSettingsFile -Force -ErrorAction SilentlyContinue
+
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Failed to set ConnectionStrings__DefaultConnection on App Service.'
+    }
+
+    $connFile = Join-Path ([System.IO.Path]::GetTempPath()) "connstrings-$(Get-Random).json"
     @(
         @{
             name = 'DefaultConnection'
@@ -48,14 +78,14 @@ function Set-WebAppConnectionString {
             type = 'SQLAzure'
             slotSetting = $false
         }
-    ) | ConvertTo-Json -Depth 3 | Set-Content -Path $settingsFile -Encoding utf8
+    ) | ConvertTo-Json -Depth 3 | Set-Content -Path $connFile -Encoding utf8
 
     az webapp config connection-string set `
         --resource-group $ResourceGroup `
         --name $WebAppName `
-        --settings "@$settingsFile"
+        --settings "@$connFile"
 
-    Remove-Item $settingsFile -Force -ErrorAction SilentlyContinue
+    Remove-Item $connFile -Force -ErrorAction SilentlyContinue
 }
 
 function Test-InvalidPipelineValue {
@@ -78,9 +108,6 @@ function Resolve-ConnectionString {
         -and -not (Test-InvalidPipelineValue $SqlPassword)) {
         Write-Host 'Building connection string from sqlServer/sqlDatabase/sqlUsername/sqlPassword.'
         Write-Host "SQL login for API: $SqlUsername"
-        if ($SqlUsername -eq ($SqlServer -replace '\..*$', '')) {
-            Write-Warning "sqlUsername '$SqlUsername' matches the SQL server short name. Use the SQL authentication login (e.g. sqladmin), not the server name."
-        }
         return (New-SqlAzureConnectionString -Server $SqlServer -Database $SqlDatabase -Username $SqlUsername -Password $SqlPassword)
     }
 
