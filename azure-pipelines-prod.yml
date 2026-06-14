@@ -9,6 +9,9 @@ trigger:
 
 pr: none
 
+# Cancel all downstream stages immediately when any stage fails (no waiting).
+cancelStagesOnFailure: true
+
 pool:
   vmImage: ubuntu-latest
 
@@ -25,17 +28,21 @@ stages:
     jobs:
       - job: BuildAndTest
         displayName: Restore, build, test, publish
+        cancelTimeoutInMinutes: 1
         steps:
           - checkout: self
+            displayName: Checkout source
 
           - task: UseDotNet@2
             displayName: Install .NET SDK
+            condition: succeeded()
             inputs:
               packageType: sdk
               version: $(dotnetVersion)
 
           - task: DotNetCoreCLI@2
             displayName: Restore
+            condition: succeeded()
             inputs:
               command: restore
               projects: |
@@ -44,6 +51,7 @@ stages:
 
           - task: DotNetCoreCLI@2
             displayName: Build
+            condition: succeeded()
             inputs:
               command: build
               projects: |
@@ -53,6 +61,7 @@ stages:
 
           - task: DotNetCoreCLI@2
             displayName: Test
+            condition: succeeded()
             inputs:
               command: test
               projects: $(testProject)
@@ -61,6 +70,7 @@ stages:
 
           - task: DotNetCoreCLI@2
             displayName: Publish API
+            condition: succeeded()
             inputs:
               command: publish
               publishWebProjects: false
@@ -70,6 +80,7 @@ stages:
 
           - task: PublishPipelineArtifact@1
             displayName: Publish API artifact
+            condition: succeeded()
             inputs:
               targetPath: $(Build.ArtifactStagingDirectory)/api
               artifact: api
@@ -78,7 +89,7 @@ stages:
   - stage: DeployProd
     displayName: Deploy — Production
     dependsOn: Build
-    condition: succeeded()
+    condition: succeeded('Build')
     variables:
       - group: StudentManagement-Prod
     jobs:
@@ -90,6 +101,7 @@ stages:
             deploy:
               steps:
                 - checkout: self
+                  condition: succeeded()
 
                 - template: pipelines/templates/deploy-database.yml
                   parameters:

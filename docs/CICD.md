@@ -41,6 +41,20 @@ Each deployment job runs **database scripts first**, then deploys the **API arti
 
 ---
 
+## Fail-fast behavior
+
+Pipelines are configured to **stop immediately** when a step or stage fails:
+
+| Setting | Effect |
+|---------|--------|
+| `cancelStagesOnFailure: true` | Cancels all downstream stages when any stage fails |
+| `condition: succeeded()` on steps | Skips remaining steps in the same job after a failure |
+| Dev → QA order | QA deploy runs only after Dev succeeds (or Dev is skipped) |
+
+**Exception:** SQL firewall cleanup still runs after a failed DB deploy so temporary firewall rules are removed.
+
+---
+
 ## Azure DevOps setup
 
 ### 1. Create the project and connect the repo

@@ -14,6 +14,9 @@
 trigger: none
 pr: none
 
+# Cancel all downstream stages immediately when any stage fails (no waiting).
+cancelStagesOnFailure: true
+
 parameters:
   - name: targetEnvironment
     displayName: Target environment
@@ -68,6 +71,7 @@ stages:
             deploy:
               steps:
                 - checkout: self
+                  condition: succeeded()
 
                 - ${{ if eq(parameters.runDatabaseScripts, true) }}:
                   - template: pipelines/templates/deploy-database.yml

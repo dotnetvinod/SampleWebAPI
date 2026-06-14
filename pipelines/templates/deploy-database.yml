@@ -42,7 +42,7 @@ steps:
 
   - task: PowerShell@2
     displayName: Install sqlcmd (Linux)
-    condition: eq(variables['Agent.OS'], 'Linux')
+    condition: and(succeeded(), eq(variables['Agent.OS'], 'Linux'))
     inputs:
       targetType: inline
       script: |
@@ -56,6 +56,7 @@ steps:
 
   - task: PowerShell@2
     displayName: Deploy database scripts
+    condition: succeeded()
     inputs:
       filePath: $(Build.SourcesDirectory)/StudentManagement.Database/deploy/Deploy-Database.ps1
       arguments: >-
@@ -67,6 +68,7 @@ steps:
 
   - task: AzureCLI@2
     displayName: Remove agent IP from SQL Server firewall
+    # Cleanup only — runs after failure so the SQL firewall rule is not left open.
     condition: and(always(), ne('${{ parameters.azureServiceConnection }}', ''), ne('${{ parameters.sqlResourceGroup }}', ''), ne(variables['sqlFirewallRuleName'], ''))
     inputs:
       azureSubscription: ${{ parameters.azureServiceConnection }}

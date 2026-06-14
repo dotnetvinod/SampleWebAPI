@@ -22,6 +22,9 @@ parameters:
     type: boolean
     default: true
 
+# Cancel all downstream stages immediately when any stage fails (no waiting).
+cancelStagesOnFailure: true
+
 pool:
   vmImage: ubuntu-latest
 
@@ -38,17 +41,21 @@ stages:
     jobs:
       - job: BuildAndTest
         displayName: Restore, build, test, publish
+        cancelTimeoutInMinutes: 1
         steps:
           - checkout: self
+            displayName: Checkout source
 
           - task: UseDotNet@2
             displayName: Install .NET SDK
+            condition: succeeded()
             inputs:
               packageType: sdk
               version: $(dotnetVersion)
 
           - task: DotNetCoreCLI@2
             displayName: Restore
+            condition: succeeded()
             inputs:
               command: restore
               projects: |
@@ -58,6 +65,7 @@ stages:
 
           - task: DotNetCoreCLI@2
             displayName: Build
+            condition: succeeded()
             inputs:
               command: build
               projects: |
@@ -68,6 +76,7 @@ stages:
 
           - task: DotNetCoreCLI@2
             displayName: Test
+            condition: succeeded()
             inputs:
               command: test
               projects: $(testProject)
@@ -76,7 +85,7 @@ stages:
 
           - task: DotNetCoreCLI@2
             displayName: Publish API
-            condition: ne(variables['Build.Reason'], 'PullRequest')
+            condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'))
             inputs:
               command: publish
               publishWebProjects: false
@@ -86,7 +95,7 @@ stages:
 
           - task: PublishPipelineArtifact@1
             displayName: Publish API artifact
-            condition: ne(variables['Build.Reason'], 'PullRequest')
+            condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'))
             inputs:
               targetPath: $(Build.ArtifactStagingDirectory)/api
               artifact: api
@@ -94,7 +103,7 @@ stages:
 
           - task: PublishPipelineArtifact@1
             displayName: Publish database scripts artifact
-            condition: ne(variables['Build.Reason'], 'PullRequest')
+            condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'))
             inputs:
               targetPath: StudentManagement.Database
               artifact: database
@@ -105,7 +114,7 @@ stages:
     dependsOn: Build
     condition: |
       and(
-        succeeded(),
+        succeeded('Build'),
         ne(variables['Build.Reason'], 'PullRequest'),
         or(
           and(eq(variables['Build.SourceBranch'], 'refs/heads/dev'), in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI')),
@@ -123,6 +132,7 @@ stages:
             deploy:
               steps:
                 - checkout: self
+                  condition: succeeded()
 
                 - template: pipelines/templates/deploy-database.yml
                   parameters:
@@ -143,10 +153,13 @@ stages:
 
   - stage: DeployQA
     displayName: Deploy — QA
-    dependsOn: Build
+    dependsOn:
+      - Build
+      - DeployDev
     condition: |
       and(
-        succeeded(),
+        succeeded('Build'),
+        in(dependencies.DeployDev.result, 'Succeeded', 'Skipped'),
         ne(variables['Build.Reason'], 'PullRequest'),
         or(
           and(eq(variables['Build.SourceBranch'], 'refs/heads/dev'), in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI')),
@@ -164,6 +177,7 @@ stages:
             deploy:
               steps:
                 - checkout: self
+                  condition: succeeded()
 
                 - template: pipelines/templates/deploy-database.yml
                   parameters:

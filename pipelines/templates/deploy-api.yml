@@ -18,13 +18,16 @@ steps:
   - ${{ if eq(parameters.pipelineResource, '') }}:
     - download: current
       artifact: ${{ parameters.artifactName }}
+      condition: succeeded()
 
   - ${{ if ne(parameters.pipelineResource, '') }}:
     - download: ${{ parameters.pipelineResource }}
       artifact: ${{ parameters.artifactName }}
+      condition: succeeded()
 
   - task: PowerShell@2
     displayName: Set package path
+    condition: succeeded()
     inputs:
       targetType: inline
       pwsh: true
@@ -41,6 +44,7 @@ steps:
 
   - task: AzureAppServiceSettings@1
     displayName: Configure App Service settings
+    condition: succeeded()
     inputs:
       azureSubscription: ${{ parameters.azureServiceConnection }}
       appName: ${{ parameters.azureWebAppName }}
@@ -61,6 +65,7 @@ steps:
 
   - task: AzureWebApp@1
     displayName: Deploy API to Azure Web App
+    condition: succeeded()
     inputs:
       azureSubscription: ${{ parameters.azureServiceConnection }}
       appType: webApp
