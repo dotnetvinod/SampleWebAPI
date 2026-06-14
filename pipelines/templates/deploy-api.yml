@@ -23,6 +23,22 @@ steps:
     - download: ${{ parameters.pipelineResource }}
       artifact: ${{ parameters.artifactName }}
 
+  - task: PowerShell@2
+    displayName: Set package path
+    inputs:
+      targetType: inline
+      pwsh: true
+      script: |
+        $artifact = '${{ parameters.artifactName }}'
+        $resource = '${{ parameters.pipelineResource }}'
+        if ([string]::IsNullOrWhiteSpace($resource)) {
+          $path = "$(Pipeline.Workspace)/$artifact"
+        } else {
+          $path = "$(Pipeline.Workspace)/$resource/$artifact"
+        }
+        Write-Host "Package path: $path"
+        Write-Host "##vso[task.setvariable variable=packagePath]$path"
+
   - task: AzureAppServiceSettings@1
     displayName: Configure App Service settings
     inputs:
@@ -49,4 +65,4 @@ steps:
       azureSubscription: ${{ parameters.azureServiceConnection }}
       appType: webApp
       appName: ${{ parameters.azureWebAppName }}
-      package: $(Pipeline.Workspace)${{ if ne(parameters.pipelineResource, '') }}/${{ parameters.pipelineResource }}${{ endif }}/${{ parameters.artifactName }}
+      package: $(packagePath)
