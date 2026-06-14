@@ -7,8 +7,39 @@ parameters:
     type: string
   - name: sqlPassword
     type: string
+  - name: azureServiceConnection
+    type: string
+    default: ''
+  - name: sqlResourceGroup
+    type: string
+    default: ''
 
 steps:
+  - task: AzureCLI@2
+    displayName: Allow agent IP on SQL Server firewall
+    condition: and(succeeded(), ne('${{ parameters.azureServiceConnection }}', ''), ne('${{ parameters.sqlResourceGroup }}', ''))
+    inputs:
+      azureSubscription: ${{ parameters.azureServiceConnection }}
+      scriptType: pscore
+      scriptLocation: inlineScript
+      inlineScript: |
+        $agentIp = (Invoke-RestMethod -Uri 'https://api.ipify.org?format=text').Trim()
+        $serverName = '${{ parameters.sqlServer }}'.Split('.')[0]
+        $ruleName = "ado-build-$(Build.BuildId)"
+        Write-Host "Agent IP: $agentIp"
+        Write-Host "SQL server: $serverName"
+        Write-Host "Firewall rule: $ruleName"
+        az sql server firewall-rule create `
+          --resource-group '${{ parameters.sqlResourceGroup }}' `
+          --server $serverName `
+          --name $ruleName `
+          --start-ip-address $agentIp `
+          --end-ip-address $agentIp
+        Write-Host "##vso[task.setvariable variable=sqlFirewallRuleName]$ruleName"
+        Write-Host "##vso[task.setvariable variable=sqlServerShortName]$serverName"
+        Write-Host "Waiting 10 seconds for firewall rule to propagate..."
+        Start-Sleep -Seconds 10
+
   - task: PowerShell@2
     displayName: Install sqlcmd (Linux)
     condition: eq(variables['Agent.OS'], 'Linux')
@@ -33,3 +64,17 @@ steps:
         -Username "${{ parameters.sqlUsername }}"
         -Password "${{ parameters.sqlPassword }}"
       pwsh: true
+
+  - task: AzureCLI@2
+    displayName: Remove agent IP from SQL Server firewall
+    condition: and(always(), ne('${{ parameters.azureServiceConnection }}', ''), ne('${{ parameters.sqlResourceGroup }}', ''), ne(variables['sqlFirewallRuleName'], ''))
+    inputs:
+      azureSubscription: ${{ parameters.azureServiceConnection }}
+      scriptType: pscore
+      scriptLocation: inlineScript
+      inlineScript: |
+        az sql server firewall-rule delete `
+          --resource-group '${{ parameters.sqlResourceGroup }}' `
+          --server '$(sqlServerShortName)' `
+          --name '$(sqlFirewallRuleName)'
+        Write-Host "Removed firewall rule $(sqlFirewallRuleName)"

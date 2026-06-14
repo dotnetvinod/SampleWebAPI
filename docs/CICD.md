@@ -76,6 +76,7 @@ Create three groups and link each to its environment (**Variable group** → **L
 | `sqlDatabase` | No | `StudentDb_Dev` |
 | `sqlUsername` | No | `sqladmin` |
 | `sqlPassword` | **Yes** | *(password)* |
+| `sqlResourceGroup` | No | Azure resource group containing the SQL server (e.g. `rg-student-dev`) |
 | `apiConnectionString` | **Yes** | `Server=tcp:...;Database=StudentDb_Dev;User ID=...;Password=...;Encrypt=True;` |
 | `azureWebAppName` | No | `student-api-dev` |
 
@@ -155,6 +156,28 @@ git push origin dev
 **Fix — deploy a specific past build:** use **Manual Deploy** pipeline (below).
 
 To see the exact reason: open the run → click skipped stage → read **"Stage not run because of condition"**.
+
+---
+
+## SQL firewall error (Agent IP not allowed)
+
+If deploy fails with:
+
+```
+Client with IP address 'x.x.x.x' is not allowed to access the server
+```
+
+**Cause:** Microsoft-hosted pipeline agents use dynamic public IPs. Azure SQL blocks them by default.
+
+**Fix (recommended — automated in pipeline):** Add `sqlResourceGroup` to each variable group. The pipeline will temporarily allow the agent IP via Azure CLI, run scripts, then remove the rule.
+
+**Fix (manual — Azure Portal):**
+
+1. Open SQL Server **`cruddev`** → **Networking**
+2. Enable **Allow Azure services and resources to access this server**
+3. Optionally add your own IP for SSMS access
+
+The service connection (`StudentManagement-Azure`) needs permission to manage firewall rules (e.g. **Contributor** on the resource group or SQL Server).
 
 ---
 
