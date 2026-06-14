@@ -7,16 +7,16 @@ steps:
   - task: AzureCLI@2
     displayName: Open SQL firewall for pipeline agent
     condition: succeeded()
+    env:
+      DEPLOY_SQL_SERVER: $(sqlServer)
+      DEPLOY_SQL_RESOURCE_GROUP: $(sqlResourceGroup)
+      DEPLOY_BUILD_ID: $(Build.BuildId)
+      DEPLOY_SERVICE_CONNECTION: ${{ parameters.azureServiceConnection }}
     inputs:
       azureSubscription: ${{ parameters.azureServiceConnection }}
       scriptType: pscore
       scriptLocation: scriptPath
       scriptPath: $(Build.SourcesDirectory)/StudentManagement.Database/deploy/Open-SqlFirewallForAgent.ps1
-      arguments: >-
-        -SqlServer "$(sqlServer)"
-        -ResourceGroup "$(sqlResourceGroup)"
-        -BuildId "$(Build.BuildId)"
-        -ServiceConnectionName "${{ parameters.azureServiceConnection }}"
 
   - task: PowerShell@2
     displayName: Install sqlcmd (Linux)
@@ -36,20 +36,24 @@ steps:
     displayName: Deploy database scripts
     condition: succeeded()
     env:
+      DEPLOY_SQL_SERVER: $(sqlServer)
+      DEPLOY_SQL_DATABASE: $(sqlDatabase)
+      DEPLOY_SQL_USERNAME: $(sqlUsername)
       SQL_PASSWORD: $(sqlPassword)
+      DEPLOY_SQL_FIREWALL_MANAGED: $(sqlFirewallManaged)
     inputs:
       targetType: inline
       pwsh: true
       script: |
         $ErrorActionPreference = 'Stop'
-        $sqlServer = '$(sqlServer)'
-        if ($sqlServer -match 'database\.windows\.net' -and '$(sqlFirewallManaged)' -ne 'true') {
+        $sqlServer = $env:DEPLOY_SQL_SERVER
+        if ($sqlServer -match 'database\.windows\.net' -and $env:DEPLOY_SQL_FIREWALL_MANAGED -ne 'true') {
           throw 'Azure SQL firewall was not opened. Check the Open SQL firewall step.'
         }
         $scriptParams = @{
           Server   = $sqlServer
-          Database = '$(sqlDatabase)'
-          Username = '$(sqlUsername)'
+          Database = $env:DEPLOY_SQL_DATABASE
+          Username = $env:DEPLOY_SQL_USERNAME
           Password = $env:SQL_PASSWORD
         }
         if ($sqlServer -match 'database\.windows\.net') {
@@ -60,12 +64,12 @@ steps:
   - task: AzureCLI@2
     displayName: Close SQL firewall for pipeline agent
     condition: and(always(), eq(variables['sqlFirewallManaged'], 'true'), ne(variables['sqlFirewallRuleName'], ''))
+    env:
+      DEPLOY_SQL_RESOURCE_GROUP: $(sqlResourceGroupResolved)
+      DEPLOY_SQL_SERVER_SHORT_NAME: $(sqlServerShortName)
+      DEPLOY_SQL_FIREWALL_RULE_NAME: $(sqlFirewallRuleName)
     inputs:
       azureSubscription: ${{ parameters.azureServiceConnection }}
       scriptType: pscore
       scriptLocation: scriptPath
       scriptPath: $(Build.SourcesDirectory)/StudentManagement.Database/deploy/Close-SqlFirewallForAgent.ps1
-      arguments: >-
-        -ResourceGroup "$(sqlResourceGroupResolved)"
-        -ServerName "$(sqlServerShortName)"
-        -RuleName "$(sqlFirewallRuleName)"

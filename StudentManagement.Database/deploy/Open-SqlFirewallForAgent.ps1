@@ -1,17 +1,32 @@
 param(
-    [Parameter(Mandatory = $true)]
     [string]$SqlServer,
-
     [string]$ResourceGroup,
-
-    [Parameter(Mandatory = $true)]
     [string]$BuildId,
-
     [string]$ServiceConnectionName = 'StudentManagement-Azure'
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+if ([string]::IsNullOrWhiteSpace($SqlServer)) {
+    $SqlServer = $env:DEPLOY_SQL_SERVER
+}
+if ([string]::IsNullOrWhiteSpace($ResourceGroup)) {
+    $ResourceGroup = $env:DEPLOY_SQL_RESOURCE_GROUP
+}
+if ([string]::IsNullOrWhiteSpace($BuildId)) {
+    $BuildId = $env:DEPLOY_BUILD_ID
+}
+if (-not [string]::IsNullOrWhiteSpace($env:DEPLOY_SERVICE_CONNECTION)) {
+    $ServiceConnectionName = $env:DEPLOY_SERVICE_CONNECTION
+}
+
+if ([string]::IsNullOrWhiteSpace($SqlServer)) {
+    throw 'SqlServer is required. Set sqlServer in the variable group.'
+}
+if ([string]::IsNullOrWhiteSpace($BuildId)) {
+    throw 'BuildId is required.'
+}
 
 if ($SqlServer -notmatch 'database\.windows\.net') {
     Write-Host 'Not Azure SQL - skipping firewall management.'
