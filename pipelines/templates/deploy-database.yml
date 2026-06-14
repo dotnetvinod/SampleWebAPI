@@ -5,33 +5,65 @@ parameters:
 
 steps:
   - task: AzureCLI@2
-    displayName: Allow agent IP on SQL Server firewall
-    condition: and(succeeded(), ne(variables['sqlResourceGroup'], ''))
+    displayName: Open SQL firewall for pipeline agent
+    condition: succeeded()
     inputs:
       azureSubscription: ${{ parameters.azureServiceConnection }}
       scriptType: pscore
       scriptLocation: inlineScript
       inlineScript: |
         $ErrorActionPreference = 'Stop'
+        $sqlServer = '$(sqlServer)'
+
+        if ($sqlServer -notmatch 'database\.windows\.net') {
+          Write-Host "Not Azure SQL - skipping firewall management."
+          Write-Host "##vso[task.setvariable variable=sqlFirewallManaged]false"
+          exit 0
+        }
+
         $agentIp = (Invoke-RestMethod -Uri 'https://api.ipify.org?format=text').Trim()
-        $serverName = '$(sqlServer)'.Split('.')[0]
-        $resourceGroup = '$(sqlResourceGroup)'
+        $serverName = $sqlServer.Split('.')[0]
+        $resourceGroup = '$(sqlResourceGroup)'.Trim()
         $ruleName = "ado-build-$(Build.BuildId)"
+
+        if ([string]::IsNullOrWhiteSpace($resourceGroup)) {
+          Write-Host "sqlResourceGroup not set. Looking up resource group for server '$serverName'..."
+          $resourceGroup = az sql server list --query "[?name=='$serverName'].resourceGroup | [0]" -o tsv
+        }
+
+        if ([string]::IsNullOrWhiteSpace($resourceGroup)) {
+          throw @"
+Could not resolve resource group for SQL server '$serverName'.
+Add 'sqlResourceGroup' to your variable group, OR grant 'Reader' on the subscription to the service connection.
+"@
+        }
+
         Write-Host "Agent IP: $agentIp"
         Write-Host "Resource group: $resourceGroup"
         Write-Host "SQL server: $serverName"
         Write-Host "Firewall rule: $ruleName"
+
         az sql server firewall-rule create `
           --resource-group $resourceGroup `
           --server $serverName `
           --name $ruleName `
           --start-ip-address $agentIp `
           --end-ip-address $agentIp
-        if ($LASTEXITCODE -ne 0) { throw "Failed to create SQL firewall rule." }
+
+        if ($LASTEXITCODE -ne 0) {
+          throw @"
+Failed to create SQL firewall rule.
+Grant 'SQL Server Contributor' on server '$serverName' (or its resource group) to service connection '${{ parameters.azureServiceConnection }}'.
+Portal: SQL Server -> Networking -> add IP $agentIp manually to test.
+"@
+        }
+
+        Write-Host "##vso[task.setvariable variable=sqlFirewallManaged]true"
         Write-Host "##vso[task.setvariable variable=sqlFirewallRuleName]$ruleName"
         Write-Host "##vso[task.setvariable variable=sqlServerShortName]$serverName"
-        Write-Host "Waiting 10 seconds for firewall rule to propagate..."
-        Start-Sleep -Seconds 10
+        Write-Host "##vso[task.setvariable variable=sqlResourceGroupResolved]$resourceGroup"
+        Write-Host "Waiting 15 seconds for firewall rule to propagate..."
+        Start-Sleep -Seconds 15
 
   - task: PowerShell@2
     displayName: Install sqlcmd (Linux)
@@ -57,23 +89,36 @@ steps:
       pwsh: true
       script: |
         $ErrorActionPreference = 'Stop'
-        & "$(Build.SourcesDirectory)/StudentManagement.Database/deploy/Deploy-Database.ps1" `
-          -Server "$(sqlServer)" `
-          -Database "$(sqlDatabase)" `
-          -Username "$(sqlUsername)" `
-          -Password $env:SQL_PASSWORD
+        $sqlServer = "$(sqlServer)"
+
+        if ($sqlServer -match 'database\.windows\.net' -and '$(sqlFirewallManaged)' -ne 'true') {
+          throw "Azure SQL firewall was not opened for this agent. Fix the 'Open SQL firewall for pipeline agent' step first."
+        }
+
+        $params = @{
+          Server   = $sqlServer
+          Database = "$(sqlDatabase)"
+          Username = "$(sqlUsername)"
+          Password = $env:SQL_PASSWORD
+        }
+
+        if ($sqlServer -match 'database\.windows\.net') {
+          $params.TrustServerCertificate = $true
+        }
+
+        & "$(Build.SourcesDirectory)/StudentManagement.Database/deploy/Deploy-Database.ps1" @params
 
   - task: AzureCLI@2
-    displayName: Remove agent IP from SQL Server firewall
-    condition: and(always(), ne(variables['sqlResourceGroup'], ''), ne(variables['sqlFirewallRuleName'], ''))
+    displayName: Close SQL firewall for pipeline agent
+    condition: and(always(), eq(variables['sqlFirewallManaged'], 'true'), ne(variables['sqlFirewallRuleName'], ''))
     inputs:
       azureSubscription: ${{ parameters.azureServiceConnection }}
       scriptType: pscore
       scriptLocation: inlineScript
       inlineScript: |
-        $ErrorActionPreference = 'Stop'
+        $ErrorActionPreference = 'Continue'
         az sql server firewall-rule delete `
-          --resource-group "$(sqlResourceGroup)" `
+          --resource-group "$(sqlResourceGroupResolved)" `
           --server "$(sqlServerShortName)" `
           --name "$(sqlFirewallRuleName)"
         Write-Host "Removed firewall rule $(sqlFirewallRuleName)"
