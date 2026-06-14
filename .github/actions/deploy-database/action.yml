@@ -1,0 +1,63 @@
+name: Deploy Database
+description: Deploy SQL scripts to SQL Server using sqlcmd
+
+inputs:
+  server:
+    description: SQL Server host
+    required: true
+  database:
+    description: Target database name
+    required: true
+  username:
+    description: SQL username (omit for trusted connection)
+    required: false
+    default: ''
+  password:
+    description: SQL password (omit for trusted connection)
+    required: false
+    default: ''
+  use-trusted-connection:
+    description: Use Windows integrated authentication
+    required: false
+    default: 'false'
+  trust-server-certificate:
+    description: Trust server certificate
+    required: false
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - name: Install sqlcmd (Linux)
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        if ! command -v sqlcmd &> /dev/null; then
+          curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | sudo gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg
+          echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/ubuntu/22.04/prod jammy main" | sudo tee /etc/apt/sources.list.d/mssql-release.list
+          sudo apt-get update
+          sudo ACCEPT_EULA=Y apt-get install -y mssql-tools18 unixodbc-dev
+          echo "/opt/mssql-tools18/bin" >> "$GITHUB_PATH"
+        fi
+
+    - name: Deploy database scripts
+      shell: pwsh
+      run: |
+        $params = @{
+          Server   = '${{ inputs.server }}'
+          Database = '${{ inputs.database }}'
+        }
+
+        if ('${{ inputs.use-trusted-connection }}' -eq 'true') {
+          $params.UseTrustedConnection = $true
+        }
+        else {
+          $params.Username = '${{ inputs.username }}'
+          $params.Password = '${{ inputs.password }}'
+        }
+
+        if ('${{ inputs.trust-server-certificate }}' -eq 'true') {
+          $params.TrustServerCertificate = $true
+        }
+
+        ./StudentManagement.Database/deploy/Deploy-Database.ps1 @params

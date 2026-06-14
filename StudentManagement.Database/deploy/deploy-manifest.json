@@ -1,0 +1,22 @@
+{
+  "scripts": [
+    {
+      "order": 1,
+      "file": "Scripts/001_CreateDatabase.sql",
+      "targetDatabase": "master",
+      "description": "Create database if it does not exist"
+    },
+    {
+      "order": 2,
+      "file": "Scripts/002_CreateTable.sql",
+      "targetDatabase": "application",
+      "description": "Create Students table"
+    },
+    {
+      "order": 3,
+      "file": "Scripts/003_StoredProcedures.sql",
+      "targetDatabase": "application",
+      "description": "Create or alter stored procedures"
+    }
+  ]
+}

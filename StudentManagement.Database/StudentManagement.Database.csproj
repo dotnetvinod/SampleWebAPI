@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <Description>SQL Server database scripts and deployment tooling for Student Management API.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="Scripts\**\*.sql" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="deploy\**\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>
