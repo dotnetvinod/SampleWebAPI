@@ -22,33 +22,38 @@ parameters:
     type: boolean
     default: true
 
-pool:
-  vmImage: ubuntu-latest
-
 variables:
   dotnetVersion: '8.0.x'
   buildConfiguration: Release
   apiProject: StudentManagementApi/StudentManagementApi.csproj
   testProject: StudentManagementApi.Tests/StudentManagementApi.Tests.csproj
   azureServiceConnection: StudentManagement-Azure
+  # Set to 'true' only after granting SQL Server Contributor + Reader to the service connection.
+  enableAutomatedSqlFirewall: 'false'
 
 stages:
   - stage: Build
-    displayName: Build & Test
+    displayName: Build and Test
+    pool:
+      vmImage: ubuntu-latest
     jobs:
       - job: BuildAndTest
         displayName: Restore, build, test, publish
+        cancelTimeoutInMinutes: 1
         steps:
           - checkout: self
+            displayName: Checkout source
 
           - task: UseDotNet@2
             displayName: Install .NET SDK
+            condition: succeeded()
             inputs:
               packageType: sdk
               version: $(dotnetVersion)
 
           - task: DotNetCoreCLI@2
             displayName: Restore
+            condition: succeeded()
             inputs:
               command: restore
               projects: |
@@ -58,6 +63,7 @@ stages:
 
           - task: DotNetCoreCLI@2
             displayName: Build
+            condition: succeeded()
             inputs:
               command: build
               projects: |
@@ -68,6 +74,7 @@ stages:
 
           - task: DotNetCoreCLI@2
             displayName: Test
+            condition: succeeded()
             inputs:
               command: test
               projects: $(testProject)
@@ -76,7 +83,7 @@ stages:
 
           - task: DotNetCoreCLI@2
             displayName: Publish API
-            condition: ne(variables['Build.Reason'], 'PullRequest')
+            condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'))
             inputs:
               command: publish
               publishWebProjects: false
@@ -86,7 +93,7 @@ stages:
 
           - task: PublishPipelineArtifact@1
             displayName: Publish API artifact
-            condition: ne(variables['Build.Reason'], 'PullRequest')
+            condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'))
             inputs:
               targetPath: $(Build.ArtifactStagingDirectory)/api
               artifact: api
@@ -94,18 +101,18 @@ stages:
 
           - task: PublishPipelineArtifact@1
             displayName: Publish database scripts artifact
-            condition: ne(variables['Build.Reason'], 'PullRequest')
+            condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'))
             inputs:
               targetPath: StudentManagement.Database
               artifact: database
               publishLocation: pipeline
 
   - stage: DeployDev
-    displayName: Deploy — Dev
+    displayName: Deploy Dev
     dependsOn: Build
     condition: |
       and(
-        succeeded(),
+        succeeded('Build'),
         ne(variables['Build.Reason'], 'PullRequest'),
         or(
           and(eq(variables['Build.SourceBranch'], 'refs/heads/dev'), in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI')),
@@ -114,6 +121,8 @@ stages:
       )
     variables:
       - group: StudentManagement-Dev
+    pool:
+      vmImage: ubuntu-latest
     jobs:
       - deployment: DeployDev
         displayName: Deploy database and API to Dev
@@ -126,25 +135,23 @@ stages:
 
                 - template: pipelines/templates/deploy-database.yml
                   parameters:
-                    sqlServer: $(sqlServer)
-                    sqlDatabase: $(sqlDatabase)
-                    sqlUsername: $(sqlUsername)
-                    sqlPassword: $(sqlPassword)
+                    azureServiceConnection: $(azureServiceConnection)
 
                 - template: pipelines/templates/deploy-api.yml
                   parameters:
                     azureServiceConnection: $(azureServiceConnection)
-                    azureWebAppName: $(azureWebAppName)
                     aspnetcoreEnvironment: Development
-                    apiConnectionString: $(apiConnectionString)
                     artifactName: api
 
   - stage: DeployQA
-    displayName: Deploy — QA
-    dependsOn: Build
+    displayName: Deploy QA
+    dependsOn:
+      - Build
+      - DeployDev
     condition: |
       and(
-        succeeded(),
+        succeeded('Build'),
+        or(succeeded('DeployDev'), eq(dependencies.DeployDev.result, 'Skipped')),
         ne(variables['Build.Reason'], 'PullRequest'),
         or(
           and(eq(variables['Build.SourceBranch'], 'refs/heads/dev'), in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI')),
@@ -153,6 +160,8 @@ stages:
       )
     variables:
       - group: StudentManagement-QA
+    pool:
+      vmImage: ubuntu-latest
     jobs:
       - deployment: DeployQA
         displayName: Deploy database and API to QA
@@ -165,15 +174,10 @@ stages:
 
                 - template: pipelines/templates/deploy-database.yml
                   parameters:
-                    sqlServer: $(sqlServer)
-                    sqlDatabase: $(sqlDatabase)
-                    sqlUsername: $(sqlUsername)
-                    sqlPassword: $(sqlPassword)
+                    azureServiceConnection: $(azureServiceConnection)
 
                 - template: pipelines/templates/deploy-api.yml
                   parameters:
                     azureServiceConnection: $(azureServiceConnection)
-                    azureWebAppName: $(azureWebAppName)
                     aspnetcoreEnvironment: QA
-                    apiConnectionString: $(apiConnectionString)
                     artifactName: api

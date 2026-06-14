@@ -1,0 +1,218 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>StudentManagementApi</name>
+    </assembly>
+    <members>
+        <member name="T:StudentManagementApi.Controllers.StudentController">
+            <summary>
+            API endpoints for managing students.
+            </summary>
+        </member>
+        <member name="M:StudentManagementApi.Controllers.StudentController.GetAll">
+            <summary>
+            Gets all students.
+            </summary>
+            <returns>A list of students.</returns>
+            <response code="200">Returns the list of students.</response>
+        </member>
+        <member name="M:StudentManagementApi.Controllers.StudentController.GetById(System.Int32)">
+            <summary>
+            Gets a student by identifier.
+            </summary>
+            <param name="id">Student identifier.</param>
+            <returns>The student record.</returns>
+            <response code="200">Returns the requested student.</response>
+            <response code="404">Student was not found.</response>
+        </member>
+        <member name="M:StudentManagementApi.Controllers.StudentController.Create(StudentManagementApi.Models.Student)">
+            <summary>
+            Creates a new student.
+            </summary>
+            <param name="student">Student data.</param>
+            <returns>The created student.</returns>
+            <response code="201">Student was created successfully.</response>
+            <response code="400">Validation failed.</response>
+        </member>
+        <member name="M:StudentManagementApi.Controllers.StudentController.Update(System.Int32,StudentManagementApi.Models.Student)">
+            <summary>
+            Updates an existing student.
+            </summary>
+            <param name="id">Student identifier.</param>
+            <param name="student">Updated student data.</param>
+            <response code="204">Student was updated successfully.</response>
+            <response code="400">Validation failed.</response>
+            <response code="404">Student was not found.</response>
+        </member>
+        <member name="M:StudentManagementApi.Controllers.StudentController.Delete(System.Int32)">
+            <summary>
+            Deletes a student.
+            </summary>
+            <param name="id">Student identifier.</param>
+            <response code="204">Student was deleted successfully.</response>
+            <response code="404">Student was not found.</response>
+        </member>
+        <member name="T:StudentManagementApi.Data.ISqlConnectionFactory">
+            <summary>
+            Factory for creating SQL Server connections.
+            </summary>
+        </member>
+        <member name="M:StudentManagementApi.Data.ISqlConnectionFactory.CreateConnection">
+            <summary>
+            Creates a new SQL connection instance.
+            </summary>
+        </member>
+        <member name="T:StudentManagementApi.Data.SqlConnectionFactory">
+            <summary>
+            Creates SQL Server connections using the configured connection string.
+            </summary>
+        </member>
+        <member name="M:StudentManagementApi.Data.SqlConnectionFactory.CreateConnection">
+            <inheritdoc />
+        </member>
+        <member name="T:StudentManagementApi.Middleware.ExceptionMiddleware">
+            <summary>
+            Global exception handling middleware that returns standardized error responses.
+            </summary>
+        </member>
+        <member name="T:StudentManagementApi.Models.ApiErrorResponse">
+            <summary>
+            Standardized API error response.
+            </summary>
+        </member>
+        <member name="P:StudentManagementApi.Models.ApiErrorResponse.StatusCode">
+            <summary>
+            HTTP status code.
+            </summary>
+        </member>
+        <member name="P:StudentManagementApi.Models.ApiErrorResponse.Message">
+            <summary>
+            Short error title or type.
+            </summary>
+        </member>
+        <member name="P:StudentManagementApi.Models.ApiErrorResponse.Details">
+            <summary>
+            Detailed error description.
+            </summary>
+        </member>
+        <member name="P:StudentManagementApi.Models.ApiErrorResponse.TraceId">
+            <summary>
+            Request trace identifier for correlation.
+            </summary>
+        </member>
+        <member name="T:StudentManagementApi.Models.Exceptions.NotFoundException">
+            <summary>
+            Exception thrown when a requested resource is not found.
+            </summary>
+        </member>
+        <member name="T:StudentManagementApi.Models.Student">
+            <summary>
+            Represents a student entity in the system.
+            </summary>
+        </member>
+        <member name="P:StudentManagementApi.Models.Student.Id">
+            <summary>
+            Unique identifier for the student.
+            </summary>
+        </member>
+        <member name="P:StudentManagementApi.Models.Student.FirstName">
+            <summary>
+            Student's first name.
+            </summary>
+        </member>
+        <member name="P:StudentManagementApi.Models.Student.LastName">
+            <summary>
+            Student's last name.
+            </summary>
+        </member>
+        <member name="P:StudentManagementApi.Models.Student.Email">
+            <summary>
+            Student's email address.
+            </summary>
+        </member>
+        <member name="P:StudentManagementApi.Models.Student.Age">
+            <summary>
+            Student's age.
+            </summary>
+        </member>
+        <member name="P:StudentManagementApi.Models.Student.CreatedDate">
+            <summary>
+            Date and time when the student record was created.
+            </summary>
+        </member>
+        <member name="T:StudentManagementApi.Repositories.IStudentRepository">
+            <summary>
+            Data access contract for student CRUD operations.
+            </summary>
+        </member>
+        <member name="T:StudentManagementApi.Repositories.StudentRepository">
+            <summary>
+            ADO.NET repository that executes stored procedures for student operations.
+            </summary>
+        </member>
+        <member name="M:StudentManagementApi.Repositories.StudentRepository.GetAllAsync">
+            <inheritdoc />
+        </member>
+        <member name="M:StudentManagementApi.Repositories.StudentRepository.GetByIdAsync(System.Int32)">
+            <inheritdoc />
+        </member>
+        <member name="M:StudentManagementApi.Repositories.StudentRepository.CreateAsync(StudentManagementApi.Models.Student)">
+            <inheritdoc />
+        </member>
+        <member name="M:StudentManagementApi.Repositories.StudentRepository.UpdateAsync(StudentManagementApi.Models.Student)">
+            <inheritdoc />
+        </member>
+        <member name="M:StudentManagementApi.Repositories.StudentRepository.DeleteAsync(System.Int32)">
+            <inheritdoc />
+        </member>
+        <member name="T:StudentManagementApi.Services.IStudentService">
+            <summary>
+            Business logic contract for student operations.
+            </summary>
+        </member>
+        <member name="T:StudentManagementApi.Services.StudentService">
+            <summary>
+            Implements student business rules and orchestrates repository operations.
+            </summary>
+        </member>
+        <member name="M:StudentManagementApi.Services.StudentService.GetAllAsync">
+            <inheritdoc />
+        </member>
+        <member name="M:StudentManagementApi.Services.StudentService.GetByIdAsync(System.Int32)">
+            <inheritdoc />
+        </member>
+        <member name="M:StudentManagementApi.Services.StudentService.CreateAsync(StudentManagementApi.Models.Student)">
+            <inheritdoc />
+        </member>
+        <member name="M:StudentManagementApi.Services.StudentService.UpdateAsync(System.Int32,StudentManagementApi.Models.Student)">
+            <inheritdoc />
+        </member>
+        <member name="M:StudentManagementApi.Services.StudentService.DeleteAsync(System.Int32)">
+            <inheritdoc />
+        </member>
+        <member name="T:StudentManagementApi.UnitOfWork.IUnitOfWork">
+            <summary>
+            Unit of work contract for coordinating repository operations and transactions.
+            </summary>
+        </member>
+        <member name="T:StudentManagementApi.UnitOfWork.UnitOfWork">
+            <summary>
+            Coordinates repository access and transaction commits for a single request scope.
+            </summary>
+        </member>
+        <member name="P:StudentManagementApi.UnitOfWork.UnitOfWork.StudentRepository">
+            <inheritdoc />
+        </member>
+        <member name="M:StudentManagementApi.UnitOfWork.UnitOfWork.CommitAsync">
+            <inheritdoc />
+        </member>
+        <member name="M:StudentManagementApi.UnitOfWork.UnitOfWork.Dispose">
+            <inheritdoc />
+        </member>
+        <member name="T:StudentManagementApi.UnitOfWork.UnitOfWorkContext">
+            <summary>
+            Shared connection and transaction context for repositories within a unit of work.
+            </summary>
+        </member>
+    </members>
+</doc>

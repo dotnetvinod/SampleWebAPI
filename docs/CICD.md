@@ -41,6 +41,20 @@ Each deployment job runs **database scripts first**, then deploys the **API arti
 
 ---
 
+## Fail-fast behavior
+
+Pipelines are configured to **stop immediately** when a step or stage fails:
+
+| Setting | Effect |
+|---------|--------|
+| `condition: succeeded()` on steps | Skips remaining steps in the same job after a failure |
+| Dev then QA stage order | QA deploy runs only after Dev succeeds (or Dev is skipped) |
+| `dependsOn` + `succeeded('Build')` | Downstream stages do not run if an upstream stage fails |
+
+**Exception:** SQL firewall cleanup still runs after a failed DB deploy so temporary firewall rules are removed.
+
+---
+
 ## Azure DevOps setup
 
 ### 1. Create the project and connect the repo
@@ -76,6 +90,7 @@ Create three groups and link each to its environment (**Variable group** → **L
 | `sqlDatabase` | No | `StudentDb_Dev` |
 | `sqlUsername` | No | `sqladmin` |
 | `sqlPassword` | **Yes** | *(password)* |
+| `sqlResourceGroup` | No | Azure resource group containing the SQL server (e.g. `rg-student-dev`) |
 | `apiConnectionString` | **Yes** | `Server=tcp:...;Database=StudentDb_Dev;User ID=...;Password=...;Encrypt=True;` |
 | `azureWebAppName` | No | `student-api-dev` |
 
@@ -155,6 +170,86 @@ git push origin dev
 **Fix — deploy a specific past build:** use **Manual Deploy** pipeline (below).
 
 To see the exact reason: open the run → click skipped stage → read **"Stage not run because of condition"**.
+
+---
+
+## SQL firewall — one-time setup (Dev / QA)
+
+Automated firewall in the pipeline is **OFF by default** (`enableAutomatedSqlFirewall: false`).
+
+Microsoft-hosted agents use **changing IP addresses**. Your service connection also needs **Reader + SQL Server Contributor** to automate firewall rules — until that is configured, use this **one-time Portal setup**:
+
+### Step 1 — Open SQL Server firewall (Dev)
+
+1. [Azure Portal](https://portal.azure.com) → **SQL Server `cruddev`**
+2. **Networking** (or **Firewalls and virtual networks**)
+3. Under **Firewall rules**, click **+ Add a firewall rule**:
+   - Rule name: `AllowPipelineAgentsDev`
+   - Start IP: `0.0.0.0`
+   - End IP: `255.255.255.255`
+4. Enable **Allow Azure services and resources to access this server**
+5. **Save**
+
+> **Dev only:** `0.0.0.0`–`255.255.255.255` allows any IP. For production, use specific IPs or private endpoints instead.
+
+Repeat on QA/Prod SQL servers when you deploy to those environments.
+
+### Step 2 — Variable group (required)
+
+**Pipelines → Library → StudentManagement-Dev** must include:
+
+| Variable | Secret? | Example |
+|----------|---------|---------|
+| `sqlServer` | No | `cruddev.database.windows.net` |
+| `sqlDatabase` | No | `StudentDb_Dev` |
+| `sqlUsername` | No | your SQL login |
+| `sqlPassword` | Yes | your SQL password |
+| `apiConnectionString` | Yes | full connection string |
+| `azureWebAppName` | No | your dev web app name |
+
+`sqlResourceGroup` is only needed if you enable automated firewall (below).
+
+### Step 3 — Push and run pipeline
+
+After Portal firewall is saved, push to `dev` — **Deploy database scripts** should connect without the optional firewall step.
+
+---
+
+## Optional — enable automated firewall later
+
+When your Azure admin grants the service connection:
+
+1. **Reader** on subscription (to look up SQL server resource group)
+2. **SQL Server Contributor** on server `cruddev`
+
+Then set in **azure-pipelines.yml** or pipeline variables:
+
+```yaml
+enableAutomatedSqlFirewall: 'true'
+```
+
+And add `sqlResourceGroup` to each variable group (from SQL server **Overview → Resource group**).
+
+Service principal object id (from your logs): `d9d290aa-7632-4181-9275-9e434e3a9d29`
+
+```bash
+az role assignment create \
+  --assignee "d9d290aa-7632-4181-9275-9e434e3a9d29" \
+  --role "SQL Server Contributor" \
+  --scope "/subscriptions/511a3bfd-7085-457c-9f93-96c48e0681f2/resourceGroups/YOUR_RG/providers/Microsoft.Sql/servers/cruddev"
+```
+
+---
+
+## SQL firewall error (Agent IP not allowed)
+
+If deploy still fails with:
+
+```
+Client with IP address 'x.x.x.x' is not allowed to access the server
+```
+
+The Portal firewall rule was not saved, or you are deploying to a **different SQL server** than the one you configured. Confirm `sqlServer` in the variable group matches the server where you added the rule.
 
 ---
 
